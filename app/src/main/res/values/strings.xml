@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OneHand+</string>
+    <string name="service_label">OneHand+ 手势服务</string>
+    <string name="a11y_summary">在屏幕左右边缘显示手势手柄并触发操作</string>
+    <string name="a11y_description">开启后，屏幕左右边缘会出现一条细手柄。从边缘向内滑动（直滑 / 斜上 / 斜下，支持长滑），即可触发你设置的操作，例如返回、主屏幕、最近任务、通知面板、快捷设置、截图等。所有操作均在本机完成，不收集任何数据。</string>
+    <string name="reset">重置</string>
+    <string name="search_hint">搜索应用</string>
+    <string name="pick_title">选择应用</string>
+    <string name="back">返回</string>
+</resources>
