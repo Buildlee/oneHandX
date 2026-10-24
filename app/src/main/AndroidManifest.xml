@@ -7,6 +7,13 @@
         android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
 
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -28,6 +35,10 @@
             android:name=".AppPickerActivity"
             android:exported="false"
             android:theme="@style/Theme.OneHand.Picker" />
+
+        <activity
+            android:name=".HandleEditActivity"
+            android:exported="false" />
 
         <service
             android:name=".EdgeService"

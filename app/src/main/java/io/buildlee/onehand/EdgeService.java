@@ -8,9 +8,11 @@ import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.ColorSpace;
-import android.hardware.HardwareBuffer;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.hardware.HardwareBuffer;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
@@ -27,47 +29,70 @@ import android.provider.Settings;
 import android.util.Log;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.SeekBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.Locale;
+import java.util.Map;
 
 /**
- * 边缘手势服务：在屏幕左右边缘放置透明手柄，识别 6 种手势并执行映射的动作。
+ * 边缘手势服务：多手柄管理 + 6 种手势 × 每手柄映射 + 动作执行 + 快速面板。
  */
 public class EdgeService extends AccessibilityService {
 
     private static final String TAG = "OneHand";
+    private static final long HIDE_DURATION_MS = 30000;
+    private static final int RECENT_MAX = 8;
+
+    private static final int PANEL_QUICK_TOOLS = 0;
+    private static final int PANEL_QUICK_LAUNCHER = 1;
+    private static final int PANEL_TASK_SWITCHER = 2;
 
     private Prefs prefs;
     private WindowManager wm;
     private final Handler main = new Handler(Looper.getMainLooper());
-    private View leftHandle, rightHandle;
+    private final Map<String, View> handleViews = new HashMap<>();
     private String currentPkg = "";
     private boolean torchOn = false;
     private String torchId = null;
+    private boolean tempHidden = false;
+    private View panelView = null;
+    private final LinkedList<String> recentPkgs = new LinkedList<>();
 
     private final Runnable restorePkg = () -> {
         currentPkg = "";
         applyVisibility();
     };
 
+    private final Runnable unhide = () -> {
+        tempHidden = false;
+        applyVisibility();
+    };
+
+    private final Runnable dismissPanelRunnable = this::dismissPanel;
+
     private final SharedPreferences.OnSharedPreferenceChangeListener prefListener = (sp, key) -> {
         if (key == null) return;
-        if (Prefs.MASTER_ENABLED.equals(key)
+        if (key.startsWith("h_")
+                || key.startsWith("handle_count_")
+                || Prefs.MASTER_ENABLED.equals(key)
                 || Prefs.LEFT_ENABLED.equals(key)
                 || Prefs.RIGHT_ENABLED.equals(key)
                 || Prefs.LANDSCAPE_ENABLED.equals(key)
                 || Prefs.HANDLE_WIDTH_DP.equals(key)
-                || Prefs.HANDLE_HEIGHT_PCT.equals(key)
-                || Prefs.HANDLE_POS_PCT.equals(key)
-                || Prefs.HANDLE_ALPHA.equals(key)
                 || Prefs.SHOW_INDICATOR.equals(key)
                 || Prefs.EXCLUDED_APPS.equals(key)) {
             main.post(this::refreshHandles);
@@ -96,7 +121,8 @@ public class EdgeService extends AccessibilityService {
         if (prefs != null) {
             try { prefs.unregisterListener(prefListener); } catch (Exception ignored) {}
         }
-        detachHandles();
+        dismissPanel();
+        detachAll();
         super.onDestroy();
     }
 
@@ -105,7 +131,8 @@ public class EdgeService extends AccessibilityService {
         if (prefs != null) {
             try { prefs.unregisterListener(prefListener); } catch (Exception ignored) {}
         }
-        detachHandles();
+        dismissPanel();
+        detachAll();
         return super.onUnbind(intent);
     }
 
@@ -120,13 +147,19 @@ public class EdgeService extends AccessibilityService {
         if (p == null) return;
         String pkg = p.toString();
         if (pkg.equals(getPackageName())) return;
-        main.removeCallbacks(restorePkg);
         if (isTransient(pkg)) {
+            main.removeCallbacks(restorePkg);
             main.postDelayed(restorePkg, 800);
-        } else {
-            currentPkg = pkg;
-            applyVisibility();
+            return;
         }
+        if (!pkg.equals(currentPkg)) {
+            recentPkgs.remove(pkg);
+            recentPkgs.addFirst(pkg);
+            while (recentPkgs.size() > RECENT_MAX) recentPkgs.removeLast();
+        }
+        main.removeCallbacks(restorePkg);
+        currentPkg = pkg;
+        applyVisibility();
     }
 
     private boolean isTransient(String pkg) {
@@ -139,38 +172,43 @@ public class EdgeService extends AccessibilityService {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        main.post(this::refreshHandles);
+        main.post(() -> {
+            dismissPanel();
+            refreshHandles();
+        });
     }
 
     // ---------------- 手柄管理 ----------------
 
     private void refreshHandles() {
         if (wm == null || prefs == null) return;
-        detachHandles();
+        detachAll();
         if (prefs.masterEnabled()) {
-            attachSide("L");
-            attachSide("R");
+            for (String side : Prefs.SIDES) {
+                if (!prefs.sideEnabled(side)) continue;
+                int count = prefs.handleCount(side);
+                for (int i = 1; i <= count; i++) {
+                    String id = Prefs.handleId(side, i);
+                    if (prefs.handleEnabled(id)) attachHandle(id);
+                }
+            }
         }
         applyVisibility();
     }
 
-    private void detachHandles() {
+    private void detachAll() {
         if (wm == null) return;
-        View[] vs = {leftHandle, rightHandle};
-        for (View v : vs) {
-            if (v != null) {
-                try { wm.removeViewImmediate(v); } catch (Exception ignored) {}
-            }
+        for (View v : handleViews.values()) {
+            try { wm.removeViewImmediate(v); } catch (Exception ignored) {}
         }
-        leftHandle = null;
-        rightHandle = null;
+        handleViews.clear();
     }
 
-    private void attachSide(String side) {
-        boolean left = side.equals("L");
+    private void attachHandle(String id) {
+        boolean left = id.startsWith("L");
         Point size = Du.screenSize(this);
         int widthPx = Du.dp(this, prefs.handleWidthDp());
-        int heightPx = Math.round(size.y * prefs.handleHeightPct() / 100f);
+        int heightPx = Math.round(size.y * prefs.handleLen(id) / 100f);
         int margin = Du.dp(this, 6);
 
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
@@ -182,12 +220,11 @@ public class EdgeService extends AccessibilityService {
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | (left ? Gravity.LEFT : Gravity.RIGHT);
         lp.x = margin;
-        lp.y = Math.max(0, Math.round((size.y - heightPx) * prefs.handlePosPct() / 100f));
+        lp.y = Math.max(0, Math.round((size.y - heightPx) * prefs.handlePos(id) / 100f));
 
         EdgeHandleView view = new EdgeHandleView(this, left);
-        int alphaPct = prefs.handleAlphaPct();
-        view.setBaseAlpha(prefs.showIndicator() ? Math.round(alphaPct * 255f / 100f) : 0);
-        view.setOnTouchListener(new HandleTouch(left));
+        view.setBaseAlpha(prefs.showIndicator() ? Math.round(prefs.handleAlpha(id) * 255f / 100f) : 0);
+        view.setOnTouchListener(new HandleTouch(id, left));
 
         try {
             wm.addView(view, lp);
@@ -195,18 +232,20 @@ public class EdgeService extends AccessibilityService {
             Log.w(TAG, "addView failed", e);
             return;
         }
-        if (left) leftHandle = view; else rightHandle = view;
-        Log.i(TAG, "handle attached side=" + side + " " + widthPx + "x" + heightPx + " y=" + lp.y);
+        handleViews.put(id, view);
+        Log.i(TAG, "handle attached id=" + id + " " + widthPx + "x" + heightPx + " y=" + lp.y);
     }
 
     private void applyVisibility() {
         if (prefs == null) return;
         boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
-        boolean gestureOn = prefs.masterEnabled()
+        boolean env = prefs.masterEnabled()
                 && (!landscape || prefs.landscapeEnabled())
+                && !tempHidden
                 && !prefs.isExcluded(currentPkg);
-        setVis(leftHandle, gestureOn && prefs.sideEnabled("L"));
-        setVis(rightHandle, gestureOn && prefs.sideEnabled("R"));
+        for (View v : handleViews.values()) {
+            setVis(v, env);
+        }
     }
 
     private void setVis(View v, boolean visible) {
@@ -221,11 +260,13 @@ public class EdgeService extends AccessibilityService {
     private int longPx() { return Du.dp(this, prefs.longTriggerDp()); }
 
     private class HandleTouch implements View.OnTouchListener {
+        private final String handleId;
         private final boolean left;
         private float downX, downY, lastX, lastY, maxInward;
         private boolean longFed;
 
-        HandleTouch(boolean left) {
+        HandleTouch(String handleId, boolean left) {
+            this.handleId = handleId;
             this.left = left;
         }
 
@@ -253,7 +294,7 @@ public class EdgeService extends AccessibilityService {
                 }
                 case MotionEvent.ACTION_UP: {
                     if (v instanceof EdgeHandleView) ((EdgeHandleView) v).setActive(false);
-                    commit(left, lastX - downX, lastY - downY, maxInward);
+                    commit(handleId, left, lastX - downX, lastY - downY, maxInward);
                     return true;
                 }
                 case MotionEvent.ACTION_CANCEL: {
@@ -266,10 +307,10 @@ public class EdgeService extends AccessibilityService {
         }
     }
 
-    private void commit(boolean leftSide, float dxRaw, float dy, float maxInward) {
+    private void commit(String handleId, boolean leftSide, float dxRaw, float dy, float maxInward) {
         float dx = leftSide ? dxRaw : -dxRaw;
         if (dx <= 0 || maxInward < shortPx() * 0.6f) {
-            Log.i(TAG, "gesture ignored dx=" + dx + " inward=" + maxInward);
+            Log.i(TAG, "gesture ignored id=" + handleId + " dx=" + dx + " inward=" + maxInward);
             return;
         }
         double angle = Math.toDegrees(Math.atan2(dy, Math.max(dx, 1f)));
@@ -278,30 +319,30 @@ public class EdgeService extends AccessibilityService {
         else if (angle >= 28) dir = "D";
         else dir = "H";
         String len = maxInward >= longPx() ? "L" : "S";
-        Log.i(TAG, "gesture side=" + (leftSide ? "L" : "R") + " len=" + len
-                + " dir=" + dir + " angle=" + Math.round(angle) + " inward=" + Math.round(maxInward));
-        runGesture(leftSide ? "L" : "R", len, dir);
+        Log.i(TAG, "gesture id=" + handleId + " len=" + len + " dir=" + dir
+                + " angle=" + Math.round(angle) + " inward=" + Math.round(maxInward));
+        runGesture(handleId, len, dir, leftSide);
     }
 
-    private void runGesture(String side, String len, String dir) {
-        String slot = Prefs.slot(side, len, dir);
+    private void runGesture(String handleId, String len, String dir, boolean leftSide) {
+        String slot = Prefs.slot(handleId, len, dir);
         GestureAction action = GestureAction.fromId(prefs.actionId(slot));
         if (action == GestureAction.NONE && "L".equals(len)) {
-            slot = Prefs.slot(side, "S", dir);
+            slot = Prefs.slot(handleId, "S", dir);
             action = GestureAction.fromId(prefs.actionId(slot));
         }
         if (action == GestureAction.NONE) {
             Log.i(TAG, "gesture slot=" + slot + " action=none");
             return;
         }
-        boolean ok = execute(action, prefs.actionPkg(slot));
+        boolean ok = execute(action, prefs.actionPkg(slot), leftSide);
         Log.i(TAG, "gesture slot=" + slot + " action=" + action.id + " ok=" + ok);
         if (ok && prefs.vibrate()) hapticOnce();
     }
 
     // ---------------- 动作执行 ----------------
 
-    private boolean execute(GestureAction a, String pkg) {
+    private boolean execute(GestureAction a, String pkg, boolean leftSide) {
         switch (a) {
             case NONE:
                 return false;
@@ -311,6 +352,8 @@ public class EdgeService extends AccessibilityService {
                 return performGlobalAction(GLOBAL_ACTION_HOME);
             case RECENTS:
                 return performGlobalAction(GLOBAL_ACTION_RECENTS);
+            case PREVIOUS_APP:
+                return previousApp();
             case NOTIFICATIONS:
                 return performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS);
             case QUICK_SETTINGS:
@@ -325,6 +368,17 @@ public class EdgeService extends AccessibilityService {
                 return toggleTorch();
             case ASSISTANT:
                 return assistant();
+            case LAUNCH_APP:
+                return launchApp(pkg);
+            case QUICK_TOOLS:
+                showPanel(PANEL_QUICK_TOOLS, leftSide);
+                return true;
+            case QUICK_LAUNCHER:
+                showPanel(PANEL_QUICK_LAUNCHER, leftSide);
+                return true;
+            case TASK_SWITCHER:
+                showPanel(PANEL_TASK_SWITCHER, leftSide);
+                return true;
             case VOLUME_UP:
                 return adjustVolume(AudioManager.ADJUST_RAISE);
             case VOLUME_DOWN:
@@ -333,13 +387,113 @@ public class EdgeService extends AccessibilityService {
                 return setMute(true);
             case MUTE_OFF:
                 return setMute(false);
+            case PLAY_PAUSE:
+                return mediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
+            case PREV_TRACK:
+                return mediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+            case NEXT_TRACK:
+                return mediaKey(KeyEvent.KEYCODE_MEDIA_NEXT);
+            case SCREEN_TIMEOUT:
+                return cycleScreenTimeout();
             case ROTATE:
                 return rotate();
-            case LAUNCH_APP:
-                return launchApp(pkg);
+            case ROTATE_RIGHT:
+                return rotateTo(1);
+            case ROTATE_LEFT:
+                return rotateTo(3);
+            case HIDE_HANDLES:
+                return hideHandlesTemp();
             default:
                 return false;
         }
+    }
+
+    private boolean previousApp() {
+        for (String p : recentPkgs) {
+            if (!p.equals(currentPkg)) return launchApp(p);
+        }
+        return false;
+    }
+
+    private boolean mediaKey(int code) {
+        try {
+            AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (am == null) return false;
+            am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
+            am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static final int[] TIMEOUTS = {15000, 30000, 60000, 120000, 300000, 600000};
+
+    private boolean cycleScreenTimeout() {
+        try {
+            if (!Settings.System.canWrite(this)) {
+                Toast.makeText(this, "需要「修改系统设置」权限", Toast.LENGTH_SHORT).show();
+                return false;
+            }
+            int cur = Settings.System.getInt(getContentResolver(), Settings.System.SCREEN_OFF_TIMEOUT, 60000);
+            int next = TIMEOUTS[0];
+            for (int t : TIMEOUTS) {
+                if (t > cur) {
+                    next = t;
+                    break;
+                }
+            }
+            Settings.System.putInt(getContentResolver(), Settings.System.SCREEN_OFF_TIMEOUT, next);
+            Toast.makeText(this, "屏幕超时：" + timeoutLabel(next), Toast.LENGTH_SHORT).show();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String timeoutLabel(int ms) {
+        int s = ms / 1000;
+        if (s < 60) return s + " 秒";
+        return (s / 60) + " 分钟";
+    }
+
+    private boolean rotate() {
+        try {
+            if (!Settings.System.canWrite(this)) {
+                Toast.makeText(this, "需要「修改系统设置」权限", Toast.LENGTH_SHORT).show();
+                return false;
+            }
+            int cur = Settings.System.getInt(getContentResolver(),
+                    Settings.System.ACCELEROMETER_ROTATION, 0);
+            Settings.System.putInt(getContentResolver(),
+                    Settings.System.ACCELEROMETER_ROTATION, cur == 1 ? 0 : 1);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean rotateTo(int rotation) {
+        try {
+            if (!Settings.System.canWrite(this)) {
+                Toast.makeText(this, "需要「修改系统设置」权限", Toast.LENGTH_SHORT).show();
+                return false;
+            }
+            Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 0);
+            Settings.System.putInt(getContentResolver(), Settings.System.USER_ROTATION, rotation);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean hideHandlesTemp() {
+        tempHidden = true;
+        applyVisibility();
+        main.removeCallbacks(unhide);
+        main.postDelayed(unhide, HIDE_DURATION_MS);
+        Toast.makeText(this, "手柄已隐藏 30 秒", Toast.LENGTH_SHORT).show();
+        return true;
     }
 
     private boolean adjustVolume(int dir) {
@@ -359,22 +513,6 @@ public class EdgeService extends AccessibilityService {
             if (am == null) return false;
             am.adjustStreamVolume(AudioManager.STREAM_RING,
                     mute ? AudioManager.ADJUST_MUTE : AudioManager.ADJUST_UNMUTE, 0);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private boolean rotate() {
-        try {
-            if (!Settings.System.canWrite(this)) {
-                Toast.makeText(this, "旋转屏幕需要「修改系统设置」权限", Toast.LENGTH_SHORT).show();
-                return false;
-            }
-            int cur = Settings.System.getInt(getContentResolver(),
-                    Settings.System.ACCELEROMETER_ROTATION, 0);
-            Settings.System.putInt(getContentResolver(),
-                    Settings.System.ACCELEROMETER_ROTATION, cur == 1 ? 0 : 1);
             return true;
         } catch (Exception e) {
             return false;
@@ -494,5 +632,238 @@ public class EdgeService extends AccessibilityService {
                 v.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE));
             }
         } catch (Exception ignored) {}
+    }
+
+    // ---------------- 快速面板 ----------------
+
+    private void showPanel(int mode, boolean leftSide) {
+        dismissPanel();
+        if (wm == null || prefs == null) return;
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xF0222226);
+        bg.setCornerRadius(Du.dp(this, 18));
+        panel.setBackground(bg);
+        int p = Du.dp(this, 10);
+        panel.setPadding(p, p, p, p);
+
+        if (mode == PANEL_QUICK_TOOLS) buildQuickTools(panel);
+        else if (mode == PANEL_QUICK_LAUNCHER) buildQuickLauncher(panel);
+        else buildTaskSwitcher(panel);
+
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                PixelFormat.TRANSLUCENT);
+        lp.gravity = (leftSide ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL;
+        lp.x = Du.dp(this, 20);
+        lp.setTitle("OneHandPanel");
+
+        panel.setOnTouchListener((v, e) -> {
+            if (e.getActionMasked() == MotionEvent.ACTION_OUTSIDE) dismissPanel();
+            return false;
+        });
+
+        try {
+            wm.addView(panel, lp);
+        } catch (Exception e) {
+            Log.w(TAG, "panel addView failed", e);
+            return;
+        }
+        panelView = panel;
+        main.removeCallbacks(dismissPanelRunnable);
+        main.postDelayed(dismissPanelRunnable, 15000);
+        Log.i(TAG, "panel shown mode=" + mode + " side=" + (leftSide ? "L" : "R"));
+    }
+
+    private void dismissPanel() {
+        if (panelView != null && wm != null) {
+            try { wm.removeViewImmediate(panelView); } catch (Exception ignored) {}
+        }
+        panelView = null;
+        main.removeCallbacks(dismissPanelRunnable);
+    }
+
+    private void buildQuickTools(LinearLayout panel) {
+        boolean canWrite = Settings.System.canWrite(this);
+        int cur = 128;
+        try {
+            cur = Settings.System.getInt(getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, 128);
+        } catch (Exception ignored) {}
+        SeekBar sb = new SeekBar(this);
+        sb.setMax(254);
+        sb.setProgress(Math.max(1, Math.min(255, cur)) - 1);
+        sb.setEnabled(canWrite);
+        sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser && canWrite) {
+                    try {
+                        Settings.System.putInt(getContentResolver(),
+                                Settings.System.SCREEN_BRIGHTNESS, progress + 1);
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {}
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+                Du.dp(this, 190), LinearLayout.LayoutParams.WRAP_CONTENT);
+        slp.bottomMargin = Du.dp(this, 6);
+        panel.addView(sb, slp);
+        if (!canWrite) {
+            TextView hint = new TextView(this);
+            hint.setText("亮度不可调（需「修改系统设置」权限）");
+            hint.setTextColor(0x99FFFFFF);
+            hint.setTextSize(11);
+            hint.setPadding(Du.dp(this, 4), 0, Du.dp(this, 4), Du.dp(this, 6));
+            panel.addView(hint);
+        }
+
+        LinearLayout row = null;
+        int shown = 0;
+        for (int i = 1; i <= 6; i++) {
+            final String slot = prefs.quickToolSlot(i);
+            final GestureAction a = GestureAction.fromId(prefs.actionId(slot));
+            if (a == GestureAction.NONE) continue;
+            if (shown % 2 == 0) {
+                row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                        Du.dp(this, 190), LinearLayout.LayoutParams.WRAP_CONTENT);
+                row.setLayoutParams(rlp);
+                panel.addView(row);
+            }
+            row.addView(panelButton(a.label, v -> {
+                execute(a, prefs.actionPkg(slot), true);
+                if (prefs.vibrate()) hapticOnce();
+                dismissPanel();
+            }));
+            shown++;
+        }
+        if (shown == 0) {
+            panel.addView(panelHint("未配置按钮 · 在应用设置中配置"));
+        }
+    }
+
+    private void buildQuickLauncher(LinearLayout panel) {
+        int shown = 0;
+        for (int i = 1; i <= 6; i++) {
+            final String slot = prefs.quickAppSlot(i);
+            String pkg = prefs.actionPkg(slot);
+            if (GestureAction.fromId(prefs.actionId(slot)) != GestureAction.LAUNCH_APP || pkg.isEmpty()) continue;
+            final String fpkg = pkg;
+            panel.addView(appRow(fpkg, () -> {
+                launchApp(fpkg);
+                if (prefs.vibrate()) hapticOnce();
+                dismissPanel();
+            }));
+            shown++;
+        }
+        if (shown == 0) panel.addView(panelHint("未配置应用 · 在应用设置中配置"));
+    }
+
+    private void buildTaskSwitcher(LinearLayout panel) {
+        int shown = 0;
+        for (String pkg : recentPkgs) {
+            if (pkg.equals(currentPkg)) continue;
+            if (shown >= 6) break;
+            final String fpkg = pkg;
+            panel.addView(appRow(fpkg, () -> {
+                launchApp(fpkg);
+                if (prefs.vibrate()) hapticOnce();
+                dismissPanel();
+            }));
+            shown++;
+        }
+        if (shown == 0) panel.addView(panelHint("暂无最近应用"));
+    }
+
+    private TextView panelButton(String label, View.OnClickListener click) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextSize(14);
+        t.setTextColor(0xFFFFFFFF);
+        t.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0x26FFFFFF);
+        bg.setCornerRadius(Du.dp(this, 12));
+        t.setBackground(bg);
+        t.setPadding(Du.dp(this, 10), Du.dp(this, 10), Du.dp(this, 10), Du.dp(this, 10));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(Du.dp(this, 3), Du.dp(this, 3), Du.dp(this, 3), Du.dp(this, 3));
+        t.setLayoutParams(lp);
+        t.setMaxLines(1);
+        t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        t.setOnClickListener(click);
+        return t;
+    }
+
+    private View appRow(String pkg, Runnable onClick) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0x1AFFFFFF);
+        bg.setCornerRadius(Du.dp(this, 12));
+        row.setBackground(bg);
+        row.setPadding(Du.dp(this, 10), Du.dp(this, 8), Du.dp(this, 14), Du.dp(this, 8));
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                Du.dp(this, 190), LinearLayout.LayoutParams.WRAP_CONTENT);
+        rlp.bottomMargin = Du.dp(this, 4);
+        row.setLayoutParams(rlp);
+
+        ImageView icon = new ImageView(this);
+        try {
+            Drawable d = getPackageManager().getApplicationIcon(pkg);
+            icon.setImageDrawable(d);
+        } catch (Exception ignored) {}
+        icon.setLayoutParams(new LinearLayout.LayoutParams(Du.dp(this, 24), Du.dp(this, 24)));
+        row.addView(icon);
+
+        TextView label = new TextView(this);
+        label.setText(appLabel(pkg));
+        label.setTextSize(14);
+        label.setTextColor(0xFFFFFFFF);
+        label.setMaxLines(1);
+        label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        tlp.leftMargin = Du.dp(this, 10);
+        label.setLayoutParams(tlp);
+        row.addView(label);
+
+        row.setOnClickListener(v -> onClick.run());
+        return row;
+    }
+
+    private String appLabel(String pkg) {
+        try {
+            return getPackageManager()
+                    .getApplicationLabel(getPackageManager().getApplicationInfo(pkg, 0))
+                    .toString();
+        } catch (Exception e) {
+            return pkg;
+        }
+    }
+
+    private TextView panelHint(String text) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextColor(0x99FFFFFF);
+        t.setTextSize(12);
+        t.setPadding(Du.dp(this, 6), Du.dp(this, 4), Du.dp(this, 6), Du.dp(this, 4));
+        return t;
     }
 }

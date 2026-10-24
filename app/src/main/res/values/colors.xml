@@ -9,4 +9,5 @@
     <color name="text_secondary">#8E8E93</color>
     <color name="accent">#3A78F2</color>
     <color name="icon_tint">#6E6E73</color>
+    <color name="danger">#FF3B30</color>
 </resources>

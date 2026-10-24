@@ -13,9 +13,6 @@ public class Prefs {
     public static final String LEFT_ENABLED = "left_enabled";
     public static final String RIGHT_ENABLED = "right_enabled";
     public static final String HANDLE_WIDTH_DP = "handle_width_dp";
-    public static final String HANDLE_HEIGHT_PCT = "handle_height_pct";
-    public static final String HANDLE_POS_PCT = "handle_pos_pct";
-    public static final String HANDLE_ALPHA = "handle_alpha";
     public static final String SHOW_INDICATOR = "show_indicator";
     public static final String VIBRATE = "vibrate";
     public static final String LONG_HINT = "long_hint";
@@ -24,13 +21,18 @@ public class Prefs {
     public static final String LANDSCAPE_ENABLED = "landscape_enabled";
     public static final String EXCLUDED_APPS = "excluded_apps";
 
+    // v1 遗留键（仅用于一次性迁移）
+    private static final String OLD_HANDLE_HEIGHT_PCT = "handle_height_pct";
+    private static final String OLD_HANDLE_POS_PCT = "handle_pos_pct";
+    private static final String OLD_HANDLE_ALPHA = "handle_alpha";
+    private static final String MODEL = "model";
+
     public static final String[] SIDES = {"L", "R"};
     public static final String[] LENGTHS = {"S", "L"};
     public static final String[] DIRS = {"H", "U", "D"};
+    public static final int MAX_HANDLES_PER_SIDE = 3;
 
     public static final int DEF_WIDTH_DP = 24;
-    public static final int DEF_HEIGHT_PCT = 70;
-    public static final int DEF_POS_PCT = 50;
     public static final int DEF_ALPHA = 45;
     public static final int DEF_SHORT_DP = 28;
     public static final int DEF_LONG_DP = 140;
@@ -41,10 +43,42 @@ public class Prefs {
     public Prefs(Context ctx) {
         this.ctx = ctx.getApplicationContext();
         this.sp = this.ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE);
+        migrateIfNeeded();
     }
 
-    public static String slot(String side, String len, String dir) {
-        return side + "-" + len + "-" + dir;
+    private void migrateIfNeeded() {
+        if (sp.getInt(MODEL, 1) >= 2) return;
+        SharedPreferences.Editor e = sp.edit();
+        for (String side : SIDES) {
+            String h1 = side + "1";
+            for (String len : LENGTHS) {
+                for (String dir : DIRS) {
+                    String oldSlot = side + "-" + len + "-" + dir;
+                    String newSlot = h1 + "-" + len + "-" + dir;
+                    copyIfPresent(e, "act_" + oldSlot, "act_" + newSlot);
+                    copyIfPresent(e, "pkg_" + oldSlot, "pkg_" + newSlot);
+                    copyIfPresent(e, "label_" + oldSlot, "label_" + newSlot);
+                }
+            }
+        }
+        int len = sp.getInt(OLD_HANDLE_HEIGHT_PCT, 70);
+        int pos = sp.getInt(OLD_HANDLE_POS_PCT, 50);
+        int alpha = sp.getInt(OLD_HANDLE_ALPHA, DEF_ALPHA);
+        for (String side : SIDES) {
+            String h1 = side + "1";
+            if (sp.contains(OLD_HANDLE_HEIGHT_PCT)) e.putInt("h_" + h1 + "_len", len);
+            if (sp.contains(OLD_HANDLE_POS_PCT)) e.putInt("h_" + h1 + "_pos", pos);
+            if (sp.contains(OLD_HANDLE_ALPHA)) e.putInt("h_" + h1 + "_alpha", alpha);
+        }
+        e.putInt(MODEL, 2);
+        e.apply();
+    }
+
+    private void copyIfPresent(SharedPreferences.Editor e, String from, String to) {
+        if (sp.contains(from) && !sp.contains(to)) {
+            String v = sp.getString(from, null);
+            if (v != null) e.putString(to, v);
+        }
     }
 
     public void registerListener(SharedPreferences.OnSharedPreferenceChangeListener l) {
@@ -66,16 +100,74 @@ public class Prefs {
     public boolean sideEnabled(String side) {
         return getBool(side.equals("L") ? LEFT_ENABLED : RIGHT_ENABLED, true);
     }
+    public void setSideEnabled(String side, boolean v) {
+        setBool(side.equals("L") ? LEFT_ENABLED : RIGHT_ENABLED, v);
+    }
+
+    // ---------------- 多手柄 ----------------
+
+    public static String handleId(String side, int index) { return side + index; }
+
+    public int handleCount(String side) {
+        return Math.max(1, Math.min(MAX_HANDLES_PER_SIDE, getInt("handle_count_" + side, 1)));
+    }
+
+    public void setHandleCount(String side, int n) {
+        setInt("handle_count_" + side, Math.max(1, Math.min(MAX_HANDLES_PER_SIDE, n)));
+    }
+
+    public boolean handleEnabled(String id) { return getBool("h_" + id + "_enabled", true); }
+    public void setHandleEnabled(String id, boolean v) { setBool("h_" + id + "_enabled", v); }
+
+    private int defaultLen(String id) { return id.endsWith("1") ? 70 : 35; }
+
+    private int defaultPos(String id) {
+        if (id.endsWith("2")) return 15;
+        if (id.endsWith("3")) return 85;
+        return 50;
+    }
+
+    public int handleLen(String id) { return getInt("h_" + id + "_len", defaultLen(id)); }
+    public int handlePos(String id) { return getInt("h_" + id + "_pos", defaultPos(id)); }
+    public int handleAlpha(String id) { return getInt("h_" + id + "_alpha", DEF_ALPHA); }
+
+    public void setHandleLen(String id, int v) { setInt("h_" + id + "_len", v); }
+    public void setHandlePos(String id, int v) { setInt("h_" + id + "_pos", v); }
+    public void setHandleAlpha(String id, int v) { setInt("h_" + id + "_alpha", v); }
+
+    /** 删除手柄（仅允许删最后一个）：清掉它的属性与全部手势映射 */
+    public void removeHandle(String id) {
+        SharedPreferences.Editor e = sp.edit();
+        e.remove("h_" + id + "_enabled");
+        e.remove("h_" + id + "_len");
+        e.remove("h_" + id + "_pos");
+        e.remove("h_" + id + "_alpha");
+        for (String len : LENGTHS) {
+            for (String dir : DIRS) {
+                String slot = slot(id, len, dir);
+                e.remove("act_" + slot);
+                e.remove("pkg_" + slot);
+                e.remove("label_" + slot);
+            }
+        }
+        e.apply();
+    }
+
+    // ---------------- 全局参数 ----------------
+
     public int handleWidthDp() { return getInt(HANDLE_WIDTH_DP, DEF_WIDTH_DP); }
-    public int handleHeightPct() { return getInt(HANDLE_HEIGHT_PCT, DEF_HEIGHT_PCT); }
-    public int handlePosPct() { return getInt(HANDLE_POS_PCT, DEF_POS_PCT); }
-    public int handleAlphaPct() { return getInt(HANDLE_ALPHA, DEF_ALPHA); }
     public boolean showIndicator() { return getBool(SHOW_INDICATOR, true); }
     public boolean vibrate() { return getBool(VIBRATE, true); }
     public boolean longHint() { return getBool(LONG_HINT, true); }
     public int shortTriggerDp() { return getInt(SHORT_TRIGGER_DP, DEF_SHORT_DP); }
     public int longTriggerDp() { return getInt(LONG_TRIGGER_DP, DEF_LONG_DP); }
     public boolean landscapeEnabled() { return getBool(LANDSCAPE_ENABLED, false); }
+
+    // ---------------- 手势映射 ----------------
+
+    public static String slot(String handleId, String len, String dir) {
+        return handleId + "-" + len + "-" + dir;
+    }
 
     private String defaultAction(String slot) {
         if (slot.endsWith("-S-H")) return GestureAction.BACK.id;
@@ -110,6 +202,13 @@ public class Prefs {
         }
         return a.label;
     }
+
+    // ---------------- 快速面板 ----------------
+
+    public String quickToolSlot(int i) { return "QT" + i; }
+    public String quickAppSlot(int i) { return "QS" + i; }
+
+    // ---------------- 排除应用 ----------------
 
     public String excludedApps() { return getStr(EXCLUDED_APPS, ""); }
 
