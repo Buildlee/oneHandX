@@ -6,8 +6,10 @@ public enum GestureAction {
     HOME("home", "主屏幕", false),
     RECENTS("recents", "最近任务", false),
     PREVIOUS_APP("previous_app", "上一应用", false),
+    SPLIT_SCREEN("split_screen", "分屏", false),
     NOTIFICATIONS("notifications", "通知面板", false),
     QUICK_SETTINGS("quick_settings", "快捷设置", false),
+    KEYBOARD_PICKER("keyboard_picker", "切换输入法", false),
     SCREENSHOT("screenshot", "截图", false),
     LOCK_SCREEN("lock_screen", "锁定屏幕", false),
     POWER_MENU("power_menu", "电源菜单", false),
@@ -19,6 +21,7 @@ public enum GestureAction {
     TASK_SWITCHER("task_switcher", "任务切换器", false),
     VOLUME_UP("volume_up", "音量 +", false),
     VOLUME_DOWN("volume_down", "音量 -", false),
+    VOLUME_PANEL("volume_panel", "音量面板", false),
     MUTE_ON("mute_on", "静音开", false),
     MUTE_OFF("mute_off", "静音关", false),
     PLAY_PAUSE("media_play_pause", "播放/暂停", false),
@@ -28,6 +31,7 @@ public enum GestureAction {
     ROTATE("rotate", "自动旋转开关", false),
     ROTATE_RIGHT("rotate_right", "向右旋转", false),
     ROTATE_LEFT("rotate_left", "向左旋转", false),
+    NAVBAR_TOGGLE("navbar_toggle", "切换导航栏", false),
     HIDE_HANDLES("hide_handles", "隐藏手柄", false);
 
     public final String id;
@@ -41,13 +45,13 @@ public enum GestureAction {
     }
 
     public static final GestureAction[] PICKER_ORDER = {
-            NONE, BACK, HOME, RECENTS, PREVIOUS_APP,
-            NOTIFICATIONS, QUICK_SETTINGS, SCREENSHOT, LOCK_SCREEN, POWER_MENU,
+            NONE, BACK, HOME, RECENTS, PREVIOUS_APP, SPLIT_SCREEN,
+            NOTIFICATIONS, QUICK_SETTINGS, KEYBOARD_PICKER, SCREENSHOT, LOCK_SCREEN, POWER_MENU,
             TORCH, ASSISTANT, LAUNCH_APP,
             QUICK_TOOLS, QUICK_LAUNCHER, TASK_SWITCHER,
-            VOLUME_UP, VOLUME_DOWN, MUTE_ON, MUTE_OFF,
+            VOLUME_UP, VOLUME_DOWN, VOLUME_PANEL, MUTE_ON, MUTE_OFF,
             PLAY_PAUSE, PREV_TRACK, NEXT_TRACK,
-            SCREEN_TIMEOUT, ROTATE, ROTATE_RIGHT, ROTATE_LEFT,
+            SCREEN_TIMEOUT, ROTATE, ROTATE_RIGHT, ROTATE_LEFT, NAVBAR_TOGGLE,
             HIDE_HANDLES
     };
 

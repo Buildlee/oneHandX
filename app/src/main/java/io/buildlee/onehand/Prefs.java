@@ -3,7 +3,12 @@ package io.buildlee.onehand;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
 
 public class Prefs {
@@ -20,6 +25,9 @@ public class Prefs {
     public static final String LONG_TRIGGER_DP = "long_trigger_dp";
     public static final String LANDSCAPE_ENABLED = "landscape_enabled";
     public static final String EXCLUDED_APPS = "excluded_apps";
+    public static final String HOLD_MS = "hold_ms";
+    public static final String PAUSE_KEYBOARD = "pause_keyboard";
+    public static final String HIDE_NAVBAR = "hide_navbar";
 
     // v1 遗留键（仅用于一次性迁移）
     private static final String OLD_HANDLE_HEIGHT_PCT = "handle_height_pct";
@@ -29,13 +37,18 @@ public class Prefs {
 
     public static final String[] SIDES = {"L", "R"};
     public static final String[] LENGTHS = {"S", "L"};
+    /** 手势槽位的长度维度：短滑 / 长滑 / 滑动保持 */
+    public static final String[] SLOT_LENS = {"S", "L", "H"};
     public static final String[] DIRS = {"H", "U", "D"};
+    public static final String LEN_HOLD = "H";
+    public static final String PRESS = "P";
     public static final int MAX_HANDLES_PER_SIDE = 3;
 
     public static final int DEF_WIDTH_DP = 24;
     public static final int DEF_ALPHA = 45;
     public static final int DEF_SHORT_DP = 28;
     public static final int DEF_LONG_DP = 140;
+    public static final int DEF_HOLD_MS = 400;
 
     private final Context ctx;
     private final SharedPreferences sp;
@@ -142,7 +155,7 @@ public class Prefs {
         e.remove("h_" + id + "_len");
         e.remove("h_" + id + "_pos");
         e.remove("h_" + id + "_alpha");
-        for (String len : LENGTHS) {
+        for (String len : SLOT_LENS) {
             for (String dir : DIRS) {
                 String slot = slot(id, len, dir);
                 e.remove("act_" + slot);
@@ -150,6 +163,10 @@ public class Prefs {
                 e.remove("label_" + slot);
             }
         }
+        String pslot = pressSlot(id);
+        e.remove("act_" + pslot);
+        e.remove("pkg_" + pslot);
+        e.remove("label_" + pslot);
         e.apply();
     }
 
@@ -161,12 +178,20 @@ public class Prefs {
     public boolean longHint() { return getBool(LONG_HINT, true); }
     public int shortTriggerDp() { return getInt(SHORT_TRIGGER_DP, DEF_SHORT_DP); }
     public int longTriggerDp() { return getInt(LONG_TRIGGER_DP, DEF_LONG_DP); }
+    public int holdMs() { return Math.max(150, Math.min(1200, getInt(HOLD_MS, DEF_HOLD_MS))); }
+    public boolean pauseKeyboard() { return getBool(PAUSE_KEYBOARD, false); }
+    public boolean hideNavbar() { return getBool(HIDE_NAVBAR, false); }
     public boolean landscapeEnabled() { return getBool(LANDSCAPE_ENABLED, false); }
 
     // ---------------- 手势映射 ----------------
 
     public static String slot(String handleId, String len, String dir) {
         return handleId + "-" + len + "-" + dir;
+    }
+
+    /** 长按（按住手柄不动）的槽位 */
+    public static String pressSlot(String handleId) {
+        return handleId + "-" + PRESS;
     }
 
     private String defaultAction(String slot) {
@@ -238,4 +263,55 @@ public class Prefs {
     }
 
     public void resetAll() { sp.edit().clear().apply(); }
+
+    // ---------------- 备份 / 恢复 ----------------
+
+    public int countEntries() { return sp.getAll().size(); }
+
+    /** 导出全部设置为 JSON（保持值类型） */
+    public String dumpJson() throws JSONException {
+        JSONObject root = new JSONObject();
+        root.put("app", "onehand");
+        root.put("version", 3);
+        JSONObject entries = new JSONObject();
+        for (Map.Entry<String, ?> e : sp.getAll().entrySet()) {
+            JSONObject o = new JSONObject();
+            Object v = e.getValue();
+            if (v instanceof Boolean) { o.put("t", "b"); o.put("v", v); }
+            else if (v instanceof Integer) { o.put("t", "i"); o.put("v", v); }
+            else if (v instanceof Long) { o.put("t", "l"); o.put("v", v); }
+            else if (v instanceof Float) { o.put("t", "f"); o.put("v", v); }
+            else { o.put("t", "s"); o.put("v", String.valueOf(v)); }
+            entries.put(e.getKey(), o);
+        }
+        root.put("entries", entries);
+        return root.toString(2);
+    }
+
+    /** 从 JSON 恢复全部设置（覆盖）。返回恢复的条目数。 */
+    public int applyJson(String json) throws JSONException {
+        JSONObject root = new JSONObject(json);
+        JSONObject entries = root.optJSONObject("entries");
+        if (entries == null || !"onehand".equals(root.optString("app", "onehand"))) {
+            throw new JSONException("不是 OneHand+ 备份文件");
+        }
+        SharedPreferences.Editor editor = sp.edit().clear();
+        int n = 0;
+        Iterator<String> it = entries.keys();
+        while (it.hasNext()) {
+            String key = it.next();
+            JSONObject o = entries.optJSONObject(key);
+            if (o == null) continue;
+            switch (o.optString("t", "s")) {
+                case "b": editor.putBoolean(key, o.optBoolean("v")); break;
+                case "i": editor.putInt(key, o.optInt("v")); break;
+                case "l": editor.putLong(key, o.optLong("v")); break;
+                case "f": editor.putFloat(key, (float) o.optDouble("v")); break;
+                default: editor.putString(key, o.optString("v", "")); break;
+            }
+            n++;
+        }
+        editor.apply();
+        return n;
+    }
 }

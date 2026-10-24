@@ -2,10 +2,10 @@
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/a11y_description"
     android:summary="@string/a11y_summary"
-    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:notificationTimeout="100"
-    android:canRetrieveWindowContent="false"
+    android:canRetrieveWindowContent="true"
     android:canTakeScreenshot="true"
     android:settingsActivity="io.buildlee.onehand.MainActivity"
-    android:accessibilityFlags="flagDefault" />
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows" />

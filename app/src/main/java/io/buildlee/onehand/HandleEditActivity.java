@@ -10,7 +10,7 @@ import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
-/** 单个手柄的编辑页：启停、6 个手势映射、外观、删除 */
+/** 单个手柄的编辑页：启停、10 个手势槽位（短滑/长滑/滑动保持 × 3 方向 + 长按）、外观、删除 */
 public class HandleEditActivity extends AppCompatActivity {
 
     public static final String EXTRA_HANDLE_ID = "handle_id";
@@ -53,10 +53,14 @@ public class HandleEditActivity extends AppCompatActivity {
 
         LinearLayout c2 = UiKit.card(this);
         c2.addView(UiKit.subLabel(this, "手势映射（点击修改）"));
-        c2.addView(UiKit.subLabel(this, "短滑"));
+        c2.addView(UiKit.subLabel(this, "短滑（快速向内滑动）"));
         for (String dir : Prefs.DIRS) c2.addView(gestureRow("S", dir));
-        c2.addView(UiKit.subLabel(this, "长滑（从边缘拖得更远；未配置时回退短滑动作）"));
+        c2.addView(UiKit.subLabel(this, "长滑（拖得更远；未配置时回退短滑动作）"));
         for (String dir : Prefs.DIRS) c2.addView(gestureRow("L", dir));
+        c2.addView(UiKit.subLabel(this, "滑动保持（滑入后停住不动；保持时长见设置页「高级」）"));
+        for (String dir : Prefs.DIRS) c2.addView(gestureRow("H", dir));
+        c2.addView(UiKit.subLabel(this, "长按（按住手柄原地不动约 0.5 秒）"));
+        c2.addView(slotRowFor(Prefs.pressSlot(handleId), "长按", R.drawable.ic_swipe_h));
         root.addView(c2);
 
         LinearLayout c3 = UiKit.card(this);
@@ -83,10 +87,13 @@ public class HandleEditActivity extends AppCompatActivity {
     }
 
     private View gestureRow(String len, String dir) {
-        final String slot = Prefs.slot(handleId, len, dir);
-        final String title = ("S".equals(len) ? "短滑 · " : "长滑 · ") + dirName(dir);
+        return slotRowFor(Prefs.slot(handleId, len, dir),
+                lenName(len) + " · " + dirName(dir), iconForDir(dir));
+    }
+
+    private View slotRowFor(final String slot, final String title, int iconRes) {
         final UiKit.SlotRow[] holder = new UiKit.SlotRow[1];
-        UiKit.SlotRow r = UiKit.slotRow(this, title, iconForDir(dir), prefs.displayFor(slot),
+        UiKit.SlotRow r = UiKit.slotRow(this, title, iconRes, prefs.displayFor(slot),
                 GestureAction.NONE.id.equals(prefs.actionId(slot)),
                 v -> ActionDialog.show(this, displayName() + " · " + title,
                         prefs.actionId(slot),
@@ -100,7 +107,8 @@ public class HandleEditActivity extends AppCompatActivity {
                             } else {
                                 boolean none = GestureAction.NONE.id.equals(prefs.actionId(slot));
                                 holder[0].value.setText(prefs.displayFor(slot));
-                                holder[0].value.setTextColor(UiKit.col(this, none ? R.color.text_secondary : R.color.text_primary));
+                                holder[0].value.setTextColor(UiKit.col(this,
+                                        none ? R.color.text_secondary : R.color.text_primary));
                             }
                         }));
         holder[0] = r;
@@ -125,6 +133,12 @@ public class HandleEditActivity extends AppCompatActivity {
         if ("U".equals(dir)) return "上滑";
         if ("D".equals(dir)) return "下滑";
         return "直滑";
+    }
+
+    private String lenName(String len) {
+        if ("L".equals(len)) return "长滑";
+        if ("H".equals(len)) return "滑动保持";
+        return "短滑";
     }
 
     private int iconForDir(String dir) {

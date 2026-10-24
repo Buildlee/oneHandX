@@ -1,6 +1,8 @@
 package io.buildlee.onehand;
 
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
@@ -16,10 +18,15 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
 
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -35,9 +42,13 @@ public class MainActivity extends AppCompatActivity {
     private TextView statusLine;
     private SwitchCompat masterSwitch;
     private TextView excludeCountTv;
+    private TextView navbarSummaryTv;
     private final Map<String, TextView> handleSummary = new HashMap<>();
     private final Map<Integer, UiKit.SlotRow> qtRows = new HashMap<>();
     private final Map<Integer, UiKit.SlotRow> qsRows = new HashMap<>();
+
+    private ActivityResultLauncher<String> exportLauncher;
+    private ActivityResultLauncher<String[]> importLauncher;
 
     private final SharedPreferences.OnSharedPreferenceChangeListener prefListener =
             (sp, key) -> refreshAll();
@@ -46,6 +57,46 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = new Prefs(this);
+
+        exportLauncher = registerForActivityResult(
+                new ActivityResultContracts.CreateDocument("application/json"),
+                uri -> {
+                    if (uri == null) return;
+                    try {
+                        String json = prefs.dumpJson();
+                        try (OutputStream os = getContentResolver().openOutputStream(uri)) {
+                            if (os != null) os.write(json.getBytes(StandardCharsets.UTF_8));
+                        }
+                        Toast.makeText(this, "已备份 " + prefs.countEntries() + " 项设置", Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        Toast.makeText(this, "备份失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                });
+
+        importLauncher = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(),
+                uri -> {
+                    if (uri == null) return;
+                    try {
+                        StringBuilder sb = new StringBuilder();
+                        try (InputStream is = getContentResolver().openInputStream(uri)) {
+                            if (is == null) return;
+                            byte[] buf = new byte[65536];
+                            int len;
+                            while ((len = is.read(buf)) > 0) {
+                                sb.append(new String(buf, 0, len, StandardCharsets.UTF_8));
+                                if (sb.length() > 2_000_000) throw new IllegalStateException("文件过大");
+                            }
+                        }
+                        int n = prefs.applyJson(sb.toString());
+                        buildContent();
+                        refreshAll();
+                        Toast.makeText(this, "已恢复 " + n + " 项设置", Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        Toast.makeText(this, "恢复失败：不是有效的 OneHand+ 备份文件", Toast.LENGTH_LONG).show();
+                    }
+                });
+
         setContentView(R.layout.activity_main);
         root = findViewById(R.id.contentRoot);
         findViewById(R.id.btnReset).setOnClickListener(v -> confirmReset());
@@ -119,6 +170,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         if (excludeCountTv != null) excludeCountTv.setText(countTextExcluded());
+        if (navbarSummaryTv != null) navbarSummaryTv.setText(navbarStateText());
     }
 
     private String summaryOf(String id) {
@@ -174,6 +226,8 @@ public class MainActivity extends AppCompatActivity {
         root.addView(feedbackCard());
         root.addView(UiKit.sectionHeader(this, "高级"));
         root.addView(advancedCard());
+        root.addView(UiKit.sectionHeader(this, "系统增强"));
+        root.addView(enhancedCard());
         root.addView(UiKit.sectionHeader(this, "关于"));
         root.addView(aboutCard());
         root.addView(footerNote());
@@ -340,6 +394,8 @@ public class MainActivity extends AppCompatActivity {
                 v -> prefs.setInt(Prefs.SHORT_TRIGGER_DP, v)));
         c.addView(UiKit.sliderRow(this, "长滑距离", 100, 420, prefs.longTriggerDp(), "dp",
                 v -> prefs.setInt(Prefs.LONG_TRIGGER_DP, v)));
+        c.addView(UiKit.sliderRow(this, "滑动保持时长", 200, 800, prefs.holdMs(), "ms",
+                v -> prefs.setInt(Prefs.HOLD_MS, v)));
         c.addView(UiKit.switchRow(this, "横屏时启用手势", null,
                 prefs.landscapeEnabled(), v -> prefs.setBool(Prefs.LANDSCAPE_ENABLED, v)));
 
@@ -353,6 +409,81 @@ public class MainActivity extends AppCompatActivity {
         c.addView(UiKit.clickRow(this, "系统权限（屏幕超时 / 旋转 / 亮度）",
                 "需要授予「修改系统设置」", v -> openWriteSettings()));
         return c;
+    }
+
+    private View enhancedCard() {
+        LinearLayout c = UiKit.card(this);
+        c.addView(UiKit.switchRow(this, "键盘弹出时暂停手柄", "输入法显示时暂时隐藏手柄，避免与键盘边缘冲突",
+                prefs.pauseKeyboard(), v -> prefs.setBool(Prefs.PAUSE_KEYBOARD, v)));
+        LinearLayout navRow = UiKit.clickRow(this, "隐藏系统导航栏（实验）", navbarStateText(),
+                v -> showNavbarDialog());
+        LinearLayout navTexts = (LinearLayout) navRow.getChildAt(0);
+        navbarSummaryTv = (TextView) navTexts.getChildAt(1);
+        c.addView(navRow);
+        c.addView(UiKit.clickRow(this, "备份设置到文件", "导出手柄、手势映射与全部配置（JSON）",
+                v -> {
+                    try {
+                        exportLauncher.launch("onehand-backup.json");
+                    } catch (Exception e) {
+                        Toast.makeText(this, "无法打开保存对话框", Toast.LENGTH_SHORT).show();
+                    }
+                }));
+        c.addView(UiKit.clickRow(this, "从文件恢复设置", "从 JSON 备份恢复全部配置（覆盖当前设置）",
+                v -> {
+                    try {
+                        importLauncher.launch(new String[]{"*/*"});
+                    } catch (Exception e) {
+                        Toast.makeText(this, "无法打开文件选择器", Toast.LENGTH_SHORT).show();
+                    }
+                }));
+        return c;
+    }
+
+    private String navbarStateText() {
+        if (!NavbarHelper.granted(this)) return "未授权 · 需 ADB 授权";
+        return NavbarHelper.isHidden(this) ? "已隐藏（若无效果说明系统不支持）" : "未隐藏";
+    }
+
+    private void showNavbarDialog() {
+        boolean granted = NavbarHelper.granted(this);
+        boolean hidden = NavbarHelper.isHidden(this);
+        String msg = "机制：写入系统设置 policy_control（immersive.navigation），需一次 ADB 授权：\n\n"
+                + NavbarHelper.grantCommand(this)
+                + "\n\n当前状态：" + (granted ? "已授权" : "未授权")
+                + " · " + (hidden ? "导航栏隐藏中" : "导航栏显示中")
+                + "\n\n注意：该机制为历史方案，部分新版 Android（13+）可能已忽略；"
+                + "若设置后无效果，请改用系统「手势导航」。关闭本功能或停用服务时会自动恢复导航栏；"
+                + "卸载应用前请先点「恢复显示」。";
+        new AlertDialog.Builder(this)
+                .setTitle("隐藏系统导航栏")
+                .setMessage(msg)
+                .setPositiveButton("隐藏", (d, w) -> applyNavbar(true))
+                .setNegativeButton("恢复显示", (d, w) -> applyNavbar(false))
+                .setNeutralButton("复制 ADB 命令", (d, w) -> copyToClipboard(NavbarHelper.grantCommand(this)))
+                .show();
+    }
+
+    private void applyNavbar(boolean hide) {
+        if (!NavbarHelper.granted(this)) {
+            Toast.makeText(this, "请先执行 ADB 授权命令（可点「复制 ADB 命令」）", Toast.LENGTH_LONG).show();
+            return;
+        }
+        boolean ok = NavbarHelper.setHidden(this, hide);
+        prefs.setBool(Prefs.HIDE_NAVBAR, hide && ok);
+        if (ok && hide) {
+            Toast.makeText(this, "已设置隐藏（若导航栏未消失说明系统不支持该机制）", Toast.LENGTH_LONG).show();
+        } else if (ok) {
+            Toast.makeText(this, "已恢复导航栏", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "设置失败", Toast.LENGTH_SHORT).show();
+        }
+        refreshSummaries();
+    }
+
+    private void copyToClipboard(String s) {
+        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("adb", s));
+        Toast.makeText(this, "已复制命令", Toast.LENGTH_SHORT).show();
     }
 
     private String countTextExcluded() {
@@ -394,12 +525,14 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout c = UiKit.card(this);
         c.setPadding(UiKit.dp(this, 16), UiKit.dp(this, 14), UiKit.dp(this, 16), UiKit.dp(this, 14));
         TextView t1 = new TextView(this);
-        t1.setText("OneHand+ v0.2.0");
+        t1.setText("OneHand+ v0.3.0");
         t1.setTextSize(14);
         t1.setTypeface(Typeface.DEFAULT_BOLD);
         t1.setTextColor(UiKit.col(this, R.color.text_primary));
         TextView t2 = new TextView(this);
-        t2.setText("单手操作手势（Samsung One Hand Operation+ 核心功能复刻）\n用法：从屏幕左/右侧边缘向内滑动 → 直滑 / 斜上 / 斜下；短滑触发短滑动作，拖得更远触发长滑动作。\n每侧最多 3 个手柄，可分别设置外观与手势映射。");
+        t2.setText("单手操作手势（Samsung One Hand Operation+ 核心功能复刻；参考 Fluid Navigation Gestures / Akis Gesture / EdgeGesture 等开源项目）\n"
+                + "用法：从屏幕左/右侧边缘向内滑动 → 直滑 / 斜上 / 斜下；短滑触发短滑动作，拖得更远触发长滑动作；滑入后停住不动可触发「滑动保持」动作；按住手柄不动可触发「长按」动作。\n"
+                + "每侧最多 3 个手柄，可分别设置外观与手势映射。");
         t2.setTextSize(13);
         t2.setTextColor(UiKit.col(this, R.color.text_secondary));
         t2.setPadding(0, UiKit.dp(this, 6), 0, 0);
@@ -411,7 +544,10 @@ public class MainActivity extends AppCompatActivity {
 
     private TextView footerNote() {
         TextView t = new TextView(this);
-        t.setText("提示：系统手势导航的「返回」也使用屏幕边缘，两者可能相互抢占。如果边缘手势不易触发，可降低系统返回手势灵敏度，或改用三键导航。\n「快速工具 / 快速启动器 / 任务切换器」通过手势动作打开浮窗，内容可在上方配置。\n全部数据仅保存在本机，应用不需要网络权限。");
+        t.setText("提示：系统手势导航的「返回」也使用屏幕边缘，两者可能相互抢占。如果边缘手势不易触发，可降低系统返回手势灵敏度，或改用三键导航。\n"
+                + "「滑动保持」「长按」需在手柄编辑页配置对应动作后才会生效；「滑动保持」的等待时长可在「高级」中调整。\n"
+                + "「隐藏系统导航栏」为实验功能（旧版 Android / 部分厂商有效），需要 ADB 授权；关闭开关或停用服务会自动恢复。\n"
+                + "全部数据仅保存在本机，应用不需要网络权限。");
         t.setTextSize(12);
         t.setTextColor(UiKit.col(this, R.color.text_secondary));
         t.setPadding(UiKit.dp(this, 8), UiKit.dp(this, 20), UiKit.dp(this, 8), 0);
