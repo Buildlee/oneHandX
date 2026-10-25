@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#F6F6F9</color>
-    <color name="card">#FFFFFF</color>
-    <color name="card_stroke">#0D000000</color>
+    <!-- v0.5 设计令牌（采样自 OPPO ColorOS 17 真机，2026-10-25） -->
+    <color name="bg">#F0F1F2</color>
+    <color name="card">#FEFEFE</color>
+    <!-- 卡片内分隔线（浅色 6% 黑） -->
+    <color name="card_stroke">#0F000000</color>
     <color name="row_pressed">#0A000000</color>
     <color name="fill">#0F000000</color>
-    <color name="text_primary">#17171A</color>
-    <color name="text_secondary">#8E8E93</color>
-    <color name="accent">#3A78F2</color>
-    <color name="icon_tint">#6E6E73</color>
-    <color name="danger">#FF3B30</color>
+    <color name="text_primary">#181818</color>
+    <color name="text_secondary">#737373</color>
+    <color name="accent">#377EF7</color>
+    <color name="accent_soft">#24377EF7</color>
+    <color name="icon_tint">#7A7A7E</color>
+    <color name="danger">#E5443B</color>
+    <color name="switch_off">#E0E0E0</color>
+    <color name="switch_thumb">#FFFFFF</color>
+    <color name="thumb_shadow">#24000000</color>
 </resources>

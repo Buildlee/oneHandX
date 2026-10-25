@@ -71,12 +71,18 @@ public class TouchpadOverlay {
 
     public void hide() {
         visible = false;
-        try { if (padView != null) wm.removeView(padView); } catch (Exception ignored) {}
-        try { if (cursorView != null) wm.removeView(cursorView); } catch (Exception ignored) {}
+        final View pv = padView;
+        final View cv = cursorView;
         padView = null;
         cursorView = null;
         padLp = null;
         cursorLp = null;
+        try { if (cv != null) wm.removeView(cv); } catch (Exception ignored) {}
+        if (pv != null) {
+            Motion.fadeOut(pv, () -> {
+                try { wm.removeViewImmediate(pv); } catch (Exception ignored) {}
+            });
+        }
         Log.i(TAG, "touchpad hidden");
     }
 
@@ -104,13 +110,15 @@ public class TouchpadOverlay {
         cursorLp = lp;
         cursorView = v;
         wm.addView(v, lp);
+        v.setAlpha(0f);
+        v.animate().alpha(1f).setDuration(220).start();
     }
 
     private void createPad() {
         FrameLayout root = new FrameLayout(svc);
         GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(18));
-        bg.setColor(0xCC121212);
+        bg.setCornerRadius(dp(22));
+        bg.setColor(0xE61C1C1E);
         bg.setStroke(dp(1), 0x33FFFFFF);
         root.setBackground(bg);
 
@@ -209,6 +217,7 @@ public class TouchpadOverlay {
         padLp = lp;
         padView = root;
         wm.addView(root, lp);
+        Motion.popIn(root, padLp.x < screenW / 2);
     }
 
     private float clamp(float v, float min, float max) {

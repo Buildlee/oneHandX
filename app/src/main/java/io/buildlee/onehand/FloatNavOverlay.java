@@ -43,8 +43,8 @@ public class FloatNavOverlay {
             bar.setGravity(Gravity.CENTER_VERTICAL);
             bar.setPadding(dp(6), dp(6), dp(6), dp(6));
             GradientDrawable bg = new GradientDrawable();
-            bg.setCornerRadius(dp(24));
-            bg.setColor(0xCC121212);
+            bg.setCornerRadius(dp(26));
+            bg.setColor(0xE61C1C1E);
             bg.setStroke(dp(1), 0x33FFFFFF);
             bar.setBackground(bg);
 
@@ -86,6 +86,7 @@ public class FloatNavOverlay {
             lp = p;
             root = bar;
             wm.addView(bar, p);
+            Motion.popIn(bar, p.x < svc.getResources().getDisplayMetrics().widthPixels / 2);
             visible = true;
             Log.i(TAG, "float nav shown");
         } catch (Exception e) {
@@ -96,9 +97,14 @@ public class FloatNavOverlay {
 
     public void hide() {
         visible = false;
-        try { if (root != null) wm.removeView(root); } catch (Exception ignored) {}
+        final View rv = root;
         root = null;
         lp = null;
+        if (rv != null) {
+            Motion.fadeOut(rv, () -> {
+                try { wm.removeViewImmediate(rv); } catch (Exception ignored) {}
+            });
+        }
         Log.i(TAG, "float nav hidden");
     }
 

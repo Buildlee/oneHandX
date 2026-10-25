@@ -13,7 +13,6 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityManager;
-import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -22,7 +21,6 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.SwitchCompat;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -40,7 +38,8 @@ public class MainActivity extends AppCompatActivity {
     private Prefs prefs;
     private LinearLayout root;
     private TextView statusLine;
-    private SwitchCompat masterSwitch;
+    private TextView statusAction;
+    private boolean firstBuildAnim = true;
     private TextView excludeCountTv;
     private TextView navbarSummaryTv;
     private final Map<String, TextView> handleSummary = new HashMap<>();
@@ -98,6 +97,7 @@ public class MainActivity extends AppCompatActivity {
                 });
 
         setContentView(R.layout.activity_main);
+        UiKit.applyInsets(findViewById(android.R.id.content));
         root = findViewById(R.id.contentRoot);
         findViewById(R.id.btnReset).setOnClickListener(v -> confirmReset());
         prefs.registerListener(prefListener);
@@ -138,14 +138,11 @@ public class MainActivity extends AppCompatActivity {
     private void refreshStatus() {
         if (statusLine == null) return;
         if (a11yOn()) {
-            statusLine.setText("服务运行中 · 从屏幕边缘滑动即可触动手势");
-            statusLine.setTextColor(UiKit.col(this, R.color.accent));
+            statusLine.setText("运行中 · 左 / 右手柄已就绪");
+            if (statusAction != null) statusAction.setText("已开启");
         } else {
-            statusLine.setText("服务未运行 · 点击下方按钮开启无障碍服务");
-            statusLine.setTextColor(UiKit.col(this, R.color.text_secondary));
-        }
-        if (masterSwitch != null && masterSwitch.isChecked() != prefs.masterEnabled()) {
-            masterSwitch.setChecked(prefs.masterEnabled());
+            statusLine.setText("未运行，点按开启");
+            if (statusAction != null) statusAction.setText("去开启");
         }
     }
 
@@ -233,45 +230,49 @@ public class MainActivity extends AppCompatActivity {
         root.addView(UiKit.sectionHeader(this, "关于"));
         root.addView(aboutCard());
         root.addView(footerNote());
+        if (firstBuildAnim) {
+            firstBuildAnim = false;
+            Motion.enterStagger(root);
+        }
     }
 
     private View topCard() {
         LinearLayout c = UiKit.card(this);
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(UiKit.dp(this, 16), UiKit.dp(this, 16), UiKit.dp(this, 16), UiKit.dp(this, 8));
+
+        LinearLayout statusRow = new LinearLayout(this);
+        statusRow.setOrientation(LinearLayout.HORIZONTAL);
+        statusRow.setGravity(Gravity.CENTER_VERTICAL);
+        statusRow.setMinimumHeight(UiKit.dp(this, 58));
+        statusRow.setPadding(0, UiKit.dp(this, 10), 0, UiKit.dp(this, 10));
+        statusRow.setBackgroundResource(R.drawable.bg_row);
 
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
         texts.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView t1 = new TextView(this);
-        t1.setText("启用 OneHand+");
-        t1.setTextSize(16);
-        t1.setTypeface(Typeface.DEFAULT_BOLD);
+        t1.setText("手势服务");
+        t1.setTextSize(16.5f);
+        t1.setLetterSpacing(-0.01f);
         t1.setTextColor(UiKit.col(this, R.color.text_primary));
         texts.addView(t1);
         statusLine = new TextView(this);
-        statusLine.setTextSize(12);
-        statusLine.setPadding(0, UiKit.dp(this, 3), 0, 0);
+        statusLine.setTextSize(13);
+        statusLine.setPadding(0, UiKit.dp(this, 3), UiKit.dp(this, 12), 0);
         texts.addView(statusLine);
-        row.addView(texts);
+        statusRow.addView(texts);
 
-        masterSwitch = new SwitchCompat(this);
-        masterSwitch.setChecked(prefs.masterEnabled());
-        masterSwitch.setOnClickListener(v -> prefs.setBool(Prefs.MASTER_ENABLED, masterSwitch.isChecked()));
-        row.addView(masterSwitch);
-        c.addView(row);
+        statusAction = new TextView(this);
+        statusAction.setTextSize(15);
+        statusAction.setTypeface(Typeface.DEFAULT_BOLD);
+        statusAction.setTextColor(UiKit.col(this, R.color.accent));
+        statusAction.setPadding(UiKit.dp(this, 8), 0, 0, 0);
+        statusRow.addView(statusAction);
+        statusRow.addView(UiKit.chevron(this));
+        statusRow.setOnClickListener(v -> openA11ySettings());
+        c.addView(statusRow);
 
-        Button btn = new Button(this);
-        btn.setText("打开无障碍设置");
-        btn.setAllCaps(false);
-        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        blp.setMargins(UiKit.dp(this, 12), UiKit.dp(this, 4), UiKit.dp(this, 12), UiKit.dp(this, 12));
-        btn.setLayoutParams(blp);
-        btn.setOnClickListener(v -> openA11ySettings());
-        c.addView(btn);
+        c.addView(UiKit.switchRow(this, "启用 OneHand+", "总开关；关闭后全部手柄停止工作",
+                prefs.masterEnabled(), v -> prefs.setBool(Prefs.MASTER_ENABLED, v)));
         return c;
     }
 
@@ -313,7 +314,8 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(UiKit.dp(this, 14), UiKit.dp(this, 12), UiKit.dp(this, 14), UiKit.dp(this, 12));
+        row.setMinimumHeight(UiKit.dp(this, 58));
+        row.setPadding(0, UiKit.dp(this, 11), 0, UiKit.dp(this, 11));
         row.setBackgroundResource(R.drawable.bg_row);
 
         LinearLayout texts = new LinearLayout(this);
@@ -321,27 +323,29 @@ public class MainActivity extends AppCompatActivity {
         texts.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView t1 = new TextView(this);
         t1.setText((side.equals("L") ? "左手柄 " : "右手柄 ") + index);
-        t1.setTextSize(15);
+        t1.setTextSize(16.5f);
+        t1.setLetterSpacing(-0.01f);
         t1.setTextColor(UiKit.col(this, R.color.text_primary));
         texts.addView(t1);
         TextView t2 = new TextView(this);
-        t2.setTextSize(12);
+        t2.setTextSize(13);
         t2.setTextColor(UiKit.col(this, R.color.text_secondary));
-        t2.setPadding(0, UiKit.dp(this, 2), 0, 0);
+        t2.setPadding(0, UiKit.dp(this, 3), 0, 0);
         t2.setText(summaryOf(id));
         handleSummary.put(id, t2);
         texts.addView(t2);
         row.addView(texts);
 
-        SwitchCompat sw = new SwitchCompat(this);
+        SoftSwitch sw = new SoftSwitch(this);
         sw.setChecked(prefs.handleEnabled(id));
-        sw.setOnClickListener(v -> prefs.setHandleEnabled(id, sw.isChecked()));
+        sw.setOnCheckedChangeListener((s, v) -> prefs.setHandleEnabled(id, v));
         row.addView(sw);
 
         row.setOnClickListener(v -> {
             Intent i = new Intent(this, HandleEditActivity.class);
             i.putExtra(HandleEditActivity.EXTRA_HANDLE_ID, id);
             startActivity(i);
+            overridePendingTransition(R.anim.push_in, R.anim.fade_out_slight);
         });
         return row;
     }
@@ -363,6 +367,7 @@ public class MainActivity extends AppCompatActivity {
                                     it.putExtra(AppPickerActivity.EXTRA_SLOT, s);
                                     it.putExtra(AppPickerActivity.EXTRA_SLOT_NAME, "快速工具 · 按钮 " + idx);
                                     startActivity(it);
+                                    overridePendingTransition(R.anim.push_in, R.anim.fade_out_slight);
                                 } else {
                                     refreshSummaries();
                                 }
@@ -379,6 +384,7 @@ public class MainActivity extends AppCompatActivity {
                         it.putExtra(AppPickerActivity.EXTRA_SLOT, prefs.quickAppSlot(idx));
                         it.putExtra(AppPickerActivity.EXTRA_SLOT_NAME, "快速启动器 · 应用 " + idx);
                         startActivity(it);
+                        overridePendingTransition(R.anim.push_in, R.anim.fade_out_slight);
                     });
             qsRows.put(i, r);
             c.addView(r.row);
@@ -605,14 +611,15 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout c = UiKit.card(this);
         c.setPadding(UiKit.dp(this, 16), UiKit.dp(this, 14), UiKit.dp(this, 16), UiKit.dp(this, 14));
         TextView t1 = new TextView(this);
-        t1.setText("OneHand+ v0.4.0");
+        t1.setText("OneHand+ v0.5.0");
         t1.setTextSize(14);
         t1.setTypeface(Typeface.DEFAULT_BOLD);
         t1.setTextColor(UiKit.col(this, R.color.text_primary));
         TextView t2 = new TextView(this);
         t2.setText("单手操作手势（Samsung One Hand Operation+ 核心功能复刻；参考 Fluid Navigation Gestures / Akis Gesture / EdgeGesture 等开源项目）\n"
                 + "用法：从屏幕左/右侧边缘向内滑动 → 直滑 / 斜上 / 斜下；短滑触发短滑动作，拖得更远触发长滑动作；滑入后停住不动可触发「滑动保持」动作；按住手柄不动可触发「长按」动作。\n"
-                + "每侧最多 3 个手柄，可分别设置外观与手势映射。");
+                + "每侧最多 3 个手柄，可分别设置外观与手势映射。\n"
+                + "v0.5：界面按 ColorOS 17 真机采样重绘，Apple 式细节、优雅动效与高刷适配。");
         t2.setTextSize(13);
         t2.setTextColor(UiKit.col(this, R.color.text_secondary));
         t2.setPadding(0, UiKit.dp(this, 6), 0, 0);
@@ -624,8 +631,9 @@ public class MainActivity extends AppCompatActivity {
 
     private TextView footerNote() {
         TextView t = new TextView(this);
-        t.setText("提示：系统手势导航的「返回」也使用屏幕边缘，两者可能相互抢占。如果边缘手势不易触发，可降低系统返回手势灵敏度，或改用三键导航。\n"
+        t.setText("提示：系统手势导航的「返回」也使用屏幕边缘，两者可能相互抢占。\n"
                 + "「滑动保持」「长按」需在手柄编辑页配置对应动作后才会生效；「滑动保持」的等待时长可在「高级」中调整。\n"
+                + "手柄默认内移 26dp 以避开系统返回手势区（可在手柄编辑页调整“距屏幕边缘”）；如仍不易触发，可改用三键导航。\n"
                 + "「隐藏系统导航栏」为实验功能（旧版 Android / 部分厂商有效），需要 ADB 授权；关闭开关或停用服务会自动恢复。\n"
                 + "全部数据仅保存在本机，应用不需要网络权限。");
         t.setTextSize(12);

@@ -47,6 +47,7 @@ public class AppPickerActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_app_picker);
+        UiKit.applyInsets(findViewById(android.R.id.content));
 
         slot = getIntent().getStringExtra(EXTRA_SLOT);
         if (slot == null) {
@@ -55,7 +56,10 @@ public class AppPickerActivity extends AppCompatActivity {
         }
         String slotName = getIntent().getStringExtra(EXTRA_SLOT_NAME);
 
-        findViewById(R.id.btnBack).setOnClickListener(v -> finish());
+        findViewById(R.id.btnBack).setOnClickListener(v -> {
+            finish();
+            overridePendingTransition(R.anim.fade_in_slight, R.anim.push_out);
+        });
         TextView sub = findViewById(R.id.pickerSub);
         sub.setText(slotName == null ? "" : "指定给：" + slotName);
 
@@ -71,6 +75,7 @@ public class AppPickerActivity extends AppCompatActivity {
             prefs.setActionLabel(slot, e.label);
             Toast.makeText(this, "已设置：" + e.label, Toast.LENGTH_SHORT).show();
             finish();
+            overridePendingTransition(R.anim.fade_in_slight, R.anim.push_out);
         });
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}

@@ -264,7 +264,7 @@ public class EdgeService extends AccessibilityService {
         Point size = Du.screenSize(this);
         int widthPx = Du.dp(this, prefs.handleWidthDp());
         int heightPx = Math.round(size.y * prefs.handleLen(id) / 100f);
-        int margin = Du.dp(this, 6);
+        int margin = Du.dp(this, prefs.handleMarginDp());
         int usableBottom = size.y;
         if (imeVisible && Prefs.KB_ABOVE.equals(prefs.keyboardMode()) && imeTop > 0) {
             usableBottom = Math.max(Du.dp(this, 240), imeTop);
@@ -282,6 +282,8 @@ public class EdgeService extends AccessibilityService {
         lp.gravity = Gravity.TOP | (left ? Gravity.LEFT : Gravity.RIGHT);
         lp.x = margin;
         lp.y = Math.max(0, Math.round((usableBottom - heightPx) * prefs.handlePos(id) / 100f));
+        float rr = Motion.maxRefreshRate(this);
+        if (rr > 0) lp.preferredRefreshRate = rr;
 
         EdgeHandleView view = new EdgeHandleView(this, left);
         view.setBaseAlpha(prefs.showIndicator() ? Math.round(prefs.handleAlpha(id) * 255f / 100f) : 0);
@@ -430,6 +432,7 @@ public class EdgeService extends AccessibilityService {
                     }
                     if (!longFed && prefs.longEnabled() && maxInward >= longPx()) {
                         longFed = true;
+                        if (v instanceof EdgeHandleView) ((EdgeHandleView) v).setHot(true);
                         if (crossTime == 0) crossTime = System.currentTimeMillis();
                         if (prefs.longHint()) hapticOnce();
                     }
@@ -1023,8 +1026,8 @@ public class EdgeService extends AccessibilityService {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xF0222226);
-        bg.setCornerRadius(Du.dp(this, 18));
+        bg.setColor(0xF01C1C1E);
+        bg.setCornerRadius(Du.dp(this, 22));
         panel.setBackground(bg);
         int p = Du.dp(this, 10);
         panel.setPadding(p, p, p, p);
@@ -1057,17 +1060,21 @@ public class EdgeService extends AccessibilityService {
             return;
         }
         panelView = panel;
+        Motion.popIn(panel, leftSide);
         main.removeCallbacks(dismissPanelRunnable);
         main.postDelayed(dismissPanelRunnable, 15000);
         Log.i(TAG, "panel shown mode=" + mode + " side=" + (leftSide ? "L" : "R"));
     }
 
     private void dismissPanel() {
-        if (panelView != null && wm != null) {
-            try { wm.removeViewImmediate(panelView); } catch (Exception ignored) {}
-        }
+        final View pv = panelView;
         panelView = null;
         main.removeCallbacks(dismissPanelRunnable);
+        if (pv != null && wm != null) {
+            Motion.fadeOut(pv, () -> {
+                try { wm.removeViewImmediate(pv); } catch (Exception ignored) {}
+            });
+        }
     }
 
     private void buildQuickTools(LinearLayout panel) {

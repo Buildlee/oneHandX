@@ -28,6 +28,7 @@ public class Prefs {
     public static final String HOLD_MS = "hold_ms";
     public static final String PAUSE_KEYBOARD = "pause_keyboard";   // v0.3 遗留，仅迁移用
     public static final String HIDE_NAVBAR = "hide_navbar";
+    public static final String HANDLE_MARGIN_DP = "handle_margin_dp";
 
     // v0.4：对齐 One Hand Operation+ 的参数
     public static final String ANGLE_DEG = "angle_deg";
@@ -73,6 +74,7 @@ public class Prefs {
     public static final int DEF_SHORT_DP = 28;
     public static final int DEF_LONG_DP = 140;
     public static final int DEF_HOLD_MS = 400;
+    public static final int DEF_MARGIN_DP = 26;
 
     private final Context ctx;
     private final SharedPreferences sp;
@@ -197,6 +199,11 @@ public class Prefs {
     // ---------------- 全局参数 ----------------
 
     public int handleWidthDp() { return getInt(HANDLE_WIDTH_DP, DEF_WIDTH_DP); }
+
+    /** 手柄距屏幕边缘的距离（避开系统返回手势区；ColorOS 上实测约 24dp） */
+    public int handleMarginDp() { return Math.max(2, Math.min(90, getInt(HANDLE_MARGIN_DP, DEF_MARGIN_DP))); }
+
+    public void setHandleMarginDp(int v) { setInt(HANDLE_MARGIN_DP, Math.max(2, Math.min(90, v))); }
     public boolean showIndicator() { return getBool(SHOW_INDICATOR, true); }
     public boolean vibrate() { return getBool(VIBRATE, true); }
     public boolean longHint() { return getBool(LONG_HINT, true); }
@@ -320,7 +327,7 @@ public class Prefs {
     public String dumpJson() throws JSONException {
         JSONObject root = new JSONObject();
         root.put("app", "onehand");
-        root.put("version", 4);
+        root.put("version", 5);
         JSONObject entries = new JSONObject();
         for (Map.Entry<String, ?> e : sp.getAll().entrySet()) {
             JSONObject o = new JSONObject();

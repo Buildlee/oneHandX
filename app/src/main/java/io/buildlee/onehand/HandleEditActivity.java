@@ -17,18 +17,23 @@ public class HandleEditActivity extends AppCompatActivity {
 
     private Prefs prefs;
     private String handleId;
+    private boolean firstBuildAnim = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_handle_edit);
+        UiKit.applyInsets(findViewById(android.R.id.content));
         handleId = getIntent().getStringExtra(EXTRA_HANDLE_ID);
         if (handleId == null || handleId.length() < 2) {
             finish();
             return;
         }
         prefs = new Prefs(this);
-        findViewById(R.id.btnBack).setOnClickListener(v -> finish());
+        findViewById(R.id.btnBack).setOnClickListener(v -> {
+            finish();
+            overridePendingTransition(R.anim.fade_in_slight, R.anim.push_out);
+        });
         TextView title = findViewById(R.id.handleTitle);
         title.setText(displayName());
     }
@@ -39,6 +44,10 @@ public class HandleEditActivity extends AppCompatActivity {
         LinearLayout root = findViewById(R.id.contentRoot);
         root.removeAllViews();
         build(root);
+        if (firstBuildAnim) {
+            firstBuildAnim = false;
+            Motion.enterStagger(root);
+        }
     }
 
     private String displayName() {
@@ -61,10 +70,13 @@ public class HandleEditActivity extends AppCompatActivity {
         for (String dir : Prefs.DIRS) c2.addView(gestureRow("H", dir));
         c2.addView(UiKit.subLabel(this, "长按（按住手柄原地不动约 0.5 秒）"));
         c2.addView(slotRowFor(Prefs.pressSlot(handleId), "长按", R.drawable.ic_swipe_h));
-        root.addView(c2);
 
         LinearLayout c3 = UiKit.card(this);
-        c3.addView(UiKit.subLabel(this, "手柄外观"));
+        c3.addView(UiKit.subLabel(this, "尺寸与位置"));
+        c3.addView(UiKit.sliderRow(this, "距屏幕边缘", 4, 80, prefs.handleMarginDp(), "dp",
+                v -> prefs.setHandleMarginDp(v)));
+        c3.addView(UiKit.subLabel(this, "提示：系统返回手势会占用屏幕最外侧约 24dp（ColorOS 实测），保持 26dp 以上可避免冲突。"));
+        c3.addView(UiKit.subLabel(this, "外观"));
         c3.addView(UiKit.sliderRow(this, "长度", 30, 95, prefs.handleLen(handleId), "%",
                 this::setLen));
         c3.addView(UiKit.sliderRow(this, "垂直位置", 0, 100, prefs.handlePos(handleId), "%",
@@ -72,6 +84,7 @@ public class HandleEditActivity extends AppCompatActivity {
         c3.addView(UiKit.sliderRow(this, "不透明度", 0, 100, prefs.handleAlpha(handleId), "%",
                 v -> prefs.setHandleAlpha(handleId, v)));
         root.addView(c3);
+        root.addView(c2);
 
         int index = Integer.parseInt(handleId.substring(1));
         String side = handleId.substring(0, 1);
@@ -104,6 +117,7 @@ public class HandleEditActivity extends AppCompatActivity {
                                 i.putExtra(AppPickerActivity.EXTRA_SLOT, slot);
                                 i.putExtra(AppPickerActivity.EXTRA_SLOT_NAME, displayName() + " · " + title);
                                 startActivity(i);
+                                overridePendingTransition(R.anim.push_in, R.anim.fade_out_slight);
                             } else {
                                 boolean none = GestureAction.NONE.id.equals(prefs.actionId(slot));
                                 holder[0].value.setText(prefs.displayFor(slot));
@@ -124,6 +138,7 @@ public class HandleEditActivity extends AppCompatActivity {
                     prefs.setHandleCount(side, prefs.handleCount(side) - 1);
                     Toast.makeText(this, "已删除", Toast.LENGTH_SHORT).show();
                     finish();
+                    overridePendingTransition(R.anim.fade_in_slight, R.anim.push_out);
                 })
                 .setNegativeButton("取消", null)
                 .show();
