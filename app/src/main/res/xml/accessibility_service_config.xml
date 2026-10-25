@@ -7,5 +7,6 @@
     android:notificationTimeout="100"
     android:canRetrieveWindowContent="true"
     android:canTakeScreenshot="true"
+    android:canPerformGestures="true"
     android:settingsActivity="io.buildlee.onehand.MainActivity"
     android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows" />

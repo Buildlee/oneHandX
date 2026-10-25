@@ -15,10 +15,13 @@ public enum GestureAction {
     POWER_MENU("power_menu", "电源菜单", false),
     TORCH("torch", "手电筒", false),
     ASSISTANT("assistant", "语音助手", false),
+    SEARCH("search", "搜索查找", false),
     LAUNCH_APP("launch_app", "打开应用", true),
     QUICK_TOOLS("quick_tools", "快速工具", false),
     QUICK_LAUNCHER("quick_launcher", "快速启动器", false),
     TASK_SWITCHER("task_switcher", "任务切换器", false),
+    TOUCHPAD("touchpad", "虚拟触控板", false),
+    FLOAT_NAV("float_nav", "浮动导航按钮", false),
     VOLUME_UP("volume_up", "音量 +", false),
     VOLUME_DOWN("volume_down", "音量 -", false),
     VOLUME_PANEL("volume_panel", "音量面板", false),
@@ -32,6 +35,7 @@ public enum GestureAction {
     ROTATE_RIGHT("rotate_right", "向右旋转", false),
     ROTATE_LEFT("rotate_left", "向左旋转", false),
     NAVBAR_TOGGLE("navbar_toggle", "切换导航栏", false),
+    COLOR_INVERT("color_invert", "颜色反转", false),
     HIDE_HANDLES("hide_handles", "隐藏手柄", false);
 
     public final String id;
@@ -47,11 +51,11 @@ public enum GestureAction {
     public static final GestureAction[] PICKER_ORDER = {
             NONE, BACK, HOME, RECENTS, PREVIOUS_APP, SPLIT_SCREEN,
             NOTIFICATIONS, QUICK_SETTINGS, KEYBOARD_PICKER, SCREENSHOT, LOCK_SCREEN, POWER_MENU,
-            TORCH, ASSISTANT, LAUNCH_APP,
-            QUICK_TOOLS, QUICK_LAUNCHER, TASK_SWITCHER,
+            TORCH, ASSISTANT, SEARCH, LAUNCH_APP,
+            QUICK_TOOLS, QUICK_LAUNCHER, TASK_SWITCHER, TOUCHPAD, FLOAT_NAV,
             VOLUME_UP, VOLUME_DOWN, VOLUME_PANEL, MUTE_ON, MUTE_OFF,
             PLAY_PAUSE, PREV_TRACK, NEXT_TRACK,
-            SCREEN_TIMEOUT, ROTATE, ROTATE_RIGHT, ROTATE_LEFT, NAVBAR_TOGGLE,
+            SCREEN_TIMEOUT, ROTATE, ROTATE_RIGHT, ROTATE_LEFT, NAVBAR_TOGGLE, COLOR_INVERT,
             HIDE_HANDLES
     };
 

@@ -66,9 +66,9 @@ public class HandleEditActivity extends AppCompatActivity {
         LinearLayout c3 = UiKit.card(this);
         c3.addView(UiKit.subLabel(this, "手柄外观"));
         c3.addView(UiKit.sliderRow(this, "长度", 30, 95, prefs.handleLen(handleId), "%",
-                v -> prefs.setHandleLen(handleId, v)));
+                this::setLen));
         c3.addView(UiKit.sliderRow(this, "垂直位置", 0, 100, prefs.handlePos(handleId), "%",
-                v -> prefs.setHandlePos(handleId, v)));
+                this::setPos));
         c3.addView(UiKit.sliderRow(this, "不透明度", 0, 100, prefs.handleAlpha(handleId), "%",
                 v -> prefs.setHandleAlpha(handleId, v)));
         root.addView(c3);
@@ -133,6 +133,20 @@ public class HandleEditActivity extends AppCompatActivity {
         if ("U".equals(dir)) return "上滑";
         if ("D".equals(dir)) return "下滑";
         return "直滑";
+    }
+
+    private void setLen(int v) {
+        prefs.setHandleLen(handleId, v);
+        if (prefs.syncHandles()) prefs.setHandleLen(mirrorId(), v);
+    }
+
+    private void setPos(int v) {
+        prefs.setHandlePos(handleId, v);
+        if (prefs.syncHandles()) prefs.setHandlePos(mirrorId(), v);
+    }
+
+    private String mirrorId() {
+        return (handleId.startsWith("L") ? "R" : "L") + handleId.substring(1);
     }
 
     private String lenName(String len) {

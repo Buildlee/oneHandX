@@ -224,6 +224,8 @@ public class MainActivity extends AppCompatActivity {
         root.addView(quickPanelCard());
         root.addView(UiKit.sectionHeader(this, "反馈"));
         root.addView(feedbackCard());
+        root.addView(UiKit.sectionHeader(this, "手势设置"));
+        root.addView(gesturePrefsCard());
         root.addView(UiKit.sectionHeader(this, "高级"));
         root.addView(advancedCard());
         root.addView(UiKit.sectionHeader(this, "系统增强"));
@@ -279,6 +281,11 @@ public class MainActivity extends AppCompatActivity {
                 v -> prefs.setInt(Prefs.HANDLE_WIDTH_DP, v)));
         c.addView(UiKit.switchRow(this, "显示指示条", "关闭后手柄不可见，但手势仍然可用",
                 prefs.showIndicator(), v -> prefs.setBool(Prefs.SHOW_INDICATOR, v)));
+        c.addView(UiKit.clickRow(this, "指示动画", animLabel(), v -> showAnimStyleDialog()));
+        c.addView(UiKit.clickRow(this, "指示颜色", Prefs.COLOR_NAMES[prefs.animColorIndex()],
+                v -> showColorDialog(Prefs.ANIM_COLOR, "指示颜色")));
+        c.addView(UiKit.clickRow(this, "手柄颜色", Prefs.COLOR_NAMES[prefs.handleColorIndex()],
+                v -> showColorDialog(Prefs.HANDLE_COLOR, "手柄颜色")));
 
         for (String side : Prefs.SIDES) {
             final String fs = side;
@@ -413,8 +420,6 @@ public class MainActivity extends AppCompatActivity {
 
     private View enhancedCard() {
         LinearLayout c = UiKit.card(this);
-        c.addView(UiKit.switchRow(this, "键盘弹出时暂停手柄", "输入法显示时暂时隐藏手柄，避免与键盘边缘冲突",
-                prefs.pauseKeyboard(), v -> prefs.setBool(Prefs.PAUSE_KEYBOARD, v)));
         LinearLayout navRow = UiKit.clickRow(this, "隐藏系统导航栏（实验）", navbarStateText(),
                 v -> showNavbarDialog());
         LinearLayout navTexts = (LinearLayout) navRow.getChildAt(0);
@@ -486,6 +491,81 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(this, "已复制命令", Toast.LENGTH_SHORT).show();
     }
 
+    private View gesturePrefsCard() {
+        LinearLayout c = UiKit.card(this);
+        c.addView(UiKit.switchRow(this, "快捷操作（短滑）", "越过触发距离立即执行，不用等松手",
+                prefs.instantShort(), v -> prefs.setBool(Prefs.INSTANT_SHORT, v)));
+        c.addView(UiKit.switchRow(this, "快捷操作（长滑）", "达到长滑距离即执行（可配合按住时长）",
+                prefs.instantLong(), v -> prefs.setBool(Prefs.INSTANT_LONG, v)));
+        c.addView(UiKit.sliderRow(this, "手势角度", 15, 60, prefs.angleDeg(), "°",
+                v -> prefs.setInt(Prefs.ANGLE_DEG, v)));
+        c.addView(UiKit.switchRow(this, "启用长距离滑动", "关闭后只有短距离滑动动作",
+                prefs.longEnabled(), v -> prefs.setBool(Prefs.LONG_ENABLED, v)));
+        c.addView(UiKit.sliderRow(this, "长滑按住持续时间", 0, 1000, prefs.longHoldMs(), "ms",
+                v -> prefs.setInt(Prefs.LONG_HOLD_MS, v)));
+        c.addView(UiKit.switchRow(this, "快速振动", "识别到手势立即振动（不等松手）",
+                prefs.quickVibrate(), v -> prefs.setBool(Prefs.QUICK_VIBRATE, v)));
+        c.addView(UiKit.sliderRow(this, "振动强度", 40, 255, prefs.vibrateAmp(), "",
+                v -> prefs.setInt(Prefs.VIBRATE_AMP, v)));
+        c.addView(UiKit.clickRow(this, "适配键盘", keyboardModeLabel(), v -> showKeyboardModeDialog()));
+        c.addView(UiKit.switchRow(this, "主屏幕时隐藏触钮", "回到桌面后自动隐藏手柄",
+                prefs.hideOnHome(), v -> prefs.setBool(Prefs.HIDE_ON_HOME, v)));
+        c.addView(UiKit.switchRow(this, "对齐触钮", "左右手柄保持相同长度与位置",
+                prefs.syncHandles(), v -> prefs.setBool(Prefs.SYNC_HANDLES, v)));
+        return c;
+    }
+
+    private String animLabel() {
+        String[] names = {"指示条", "箭头", "曲线"};
+        return names[prefs.animStyle()];
+    }
+
+    private String keyboardModeLabel() {
+        String m = prefs.keyboardMode();
+        if (Prefs.KB_HIDE.equals(m)) return "隐藏手柄";
+        if (Prefs.KB_OFF.equals(m)) return "不处理";
+        return "移到键盘上方";
+    }
+
+    private void showKeyboardModeDialog() {
+        String[] labels = {"移到键盘上方（推荐）", "隐藏手柄", "不处理"};
+        String[] values = {Prefs.KB_ABOVE, Prefs.KB_HIDE, Prefs.KB_OFF};
+        int cur = 0;
+        String mode = prefs.keyboardMode();
+        for (int i = 0; i < values.length; i++) if (values[i].equals(mode)) cur = i;
+        new AlertDialog.Builder(this)
+                .setTitle("适配键盘")
+                .setSingleChoiceItems(labels, cur, (d, which) -> {
+                    prefs.setStr(Prefs.KEYBOARD_MODE, values[which]);
+                    d.dismiss();
+                    buildContent();
+                })
+                .show();
+    }
+
+    private void showAnimStyleDialog() {
+        String[] labels = {"指示条", "箭头", "曲线"};
+        new AlertDialog.Builder(this)
+                .setTitle("指示动画")
+                .setSingleChoiceItems(labels, prefs.animStyle(), (d, which) -> {
+                    prefs.setInt(Prefs.ANIM_STYLE, which);
+                    d.dismiss();
+                    buildContent();
+                })
+                .show();
+    }
+
+    private void showColorDialog(String key, String title) {
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setSingleChoiceItems(Prefs.COLOR_NAMES, prefs.getInt(key, 0), (d, which) -> {
+                    prefs.setInt(key, which);
+                    d.dismiss();
+                    buildContent();
+                })
+                .show();
+    }
+
     private String countTextExcluded() {
         int n = prefs.excludedSet().size();
         return n == 0 ? "未选择" : n + " 个应用";
@@ -525,7 +605,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout c = UiKit.card(this);
         c.setPadding(UiKit.dp(this, 16), UiKit.dp(this, 14), UiKit.dp(this, 16), UiKit.dp(this, 14));
         TextView t1 = new TextView(this);
-        t1.setText("OneHand+ v0.3.0");
+        t1.setText("OneHand+ v0.4.0");
         t1.setTextSize(14);
         t1.setTypeface(Typeface.DEFAULT_BOLD);
         t1.setTextColor(UiKit.col(this, R.color.text_primary));

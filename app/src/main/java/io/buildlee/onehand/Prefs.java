@@ -26,8 +26,32 @@ public class Prefs {
     public static final String LANDSCAPE_ENABLED = "landscape_enabled";
     public static final String EXCLUDED_APPS = "excluded_apps";
     public static final String HOLD_MS = "hold_ms";
-    public static final String PAUSE_KEYBOARD = "pause_keyboard";
+    public static final String PAUSE_KEYBOARD = "pause_keyboard";   // v0.3 遗留，仅迁移用
     public static final String HIDE_NAVBAR = "hide_navbar";
+
+    // v0.4：对齐 One Hand Operation+ 的参数
+    public static final String ANGLE_DEG = "angle_deg";
+    public static final String QUICK_VIBRATE = "quick_vibrate";
+    public static final String VIBRATE_AMP = "vibrate_amp";
+    public static final String INSTANT_SHORT = "instant_short";
+    public static final String INSTANT_LONG = "instant_long";
+    public static final String LONG_ENABLED = "long_enabled";
+    public static final String LONG_HOLD_MS = "long_hold_ms";
+    public static final String KEYBOARD_MODE = "keyboard_mode";
+    public static final String HIDE_ON_HOME = "hide_on_home";
+    public static final String SYNC_HANDLES = "sync_handles";
+    public static final String ANIM_STYLE = "anim_style";
+    public static final String ANIM_COLOR = "anim_color";
+    public static final String HANDLE_COLOR = "handle_color";
+
+    public static final String KB_ABOVE = "above";
+    public static final String KB_HIDE = "hide";
+    public static final String KB_OFF = "off";
+
+    public static final int[] COLORS = {
+            0xFFFFFFFF, 0xFF4A9EFF, 0xFF39D98A, 0xFFFF9F43, 0xFFFF6B9A, 0xFFBF7BFF
+    };
+    public static final String[] COLOR_NAMES = {"白", "蓝", "绿", "橙", "粉", "紫"};
 
     // v1 遗留键（仅用于一次性迁移）
     private static final String OLD_HANDLE_HEIGHT_PCT = "handle_height_pct";
@@ -179,9 +203,34 @@ public class Prefs {
     public int shortTriggerDp() { return getInt(SHORT_TRIGGER_DP, DEF_SHORT_DP); }
     public int longTriggerDp() { return getInt(LONG_TRIGGER_DP, DEF_LONG_DP); }
     public int holdMs() { return Math.max(150, Math.min(1200, getInt(HOLD_MS, DEF_HOLD_MS))); }
-    public boolean pauseKeyboard() { return getBool(PAUSE_KEYBOARD, false); }
-    public boolean hideNavbar() { return getBool(HIDE_NAVBAR, false); }
     public boolean landscapeEnabled() { return getBool(LANDSCAPE_ENABLED, false); }
+
+    // v0.4
+    public int angleDeg() { return Math.max(15, Math.min(60, getInt(ANGLE_DEG, 28))); }
+    public boolean quickVibrate() { return getBool(QUICK_VIBRATE, true); }
+    public int vibrateAmp() { return Math.max(30, Math.min(255, getInt(VIBRATE_AMP, 200))); }
+    public boolean instantShort() { return getBool(INSTANT_SHORT, false); }
+    public boolean instantLong() { return getBool(INSTANT_LONG, true); }
+    public boolean longEnabled() { return getBool(LONG_ENABLED, true); }
+    public int longHoldMs() { return Math.max(0, Math.min(1200, getInt(LONG_HOLD_MS, 0))); }
+
+    /** 键盘策略：above（移到键盘上方）/ hide（隐藏）/ off；默认按 OHO+ 移到上方 */
+    public String keyboardMode() {
+        String def = getBool(PAUSE_KEYBOARD, false) ? KB_HIDE : KB_ABOVE;
+        String mode = getStr(KEYBOARD_MODE, def);
+        if (!KB_ABOVE.equals(mode) && !KB_HIDE.equals(mode) && !KB_OFF.equals(mode)) mode = KB_ABOVE;
+        return mode;
+    }
+
+    public boolean hideOnHome() { return getBool(HIDE_ON_HOME, false); }
+
+    public boolean hideNavbar() { return getBool(HIDE_NAVBAR, false); }
+    public boolean syncHandles() { return getBool(SYNC_HANDLES, false); }
+    public int animStyle() { return Math.max(0, Math.min(2, getInt(ANIM_STYLE, 0))); }
+    public int animColorIndex() { return Math.max(0, Math.min(COLORS.length - 1, getInt(ANIM_COLOR, 0))); }
+    public int handleColorIndex() { return Math.max(0, Math.min(COLORS.length - 1, getInt(HANDLE_COLOR, 0))); }
+    public int animColor() { return COLORS[animColorIndex()]; }
+    public int handleColor() { return COLORS[handleColorIndex()]; }
 
     // ---------------- 手势映射 ----------------
 
@@ -268,11 +317,10 @@ public class Prefs {
 
     public int countEntries() { return sp.getAll().size(); }
 
-    /** 导出全部设置为 JSON（保持值类型） */
     public String dumpJson() throws JSONException {
         JSONObject root = new JSONObject();
         root.put("app", "onehand");
-        root.put("version", 3);
+        root.put("version", 4);
         JSONObject entries = new JSONObject();
         for (Map.Entry<String, ?> e : sp.getAll().entrySet()) {
             JSONObject o = new JSONObject();
@@ -288,7 +336,6 @@ public class Prefs {
         return root.toString(2);
     }
 
-    /** 从 JSON 恢复全部设置（覆盖）。返回恢复的条目数。 */
     public int applyJson(String json) throws JSONException {
         JSONObject root = new JSONObject(json);
         JSONObject entries = root.optJSONObject("entries");

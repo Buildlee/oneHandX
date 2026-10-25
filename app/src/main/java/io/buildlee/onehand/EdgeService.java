@@ -78,6 +78,12 @@ public class EdgeService extends AccessibilityService {
     private final LinkedList<String> recentPkgs = new LinkedList<>();
     private boolean imeVisible = false;
     private boolean navbarHiddenByUs = false;
+    private TouchpadOverlay touchpad;
+    private FloatNavOverlay floatNav;
+    private String homePkg = "";
+    private boolean isHome = false;
+    private int imeTop = 0;
+    private boolean quickVibed = false;
 
     private final Runnable restorePkg = () -> {
         currentPkg = "";
@@ -91,6 +97,8 @@ public class EdgeService extends AccessibilityService {
 
     private final Runnable dismissPanelRunnable = this::dismissPanel;
 
+    private final Runnable refreshForIme = this::refreshHandles;
+
     private final SharedPreferences.OnSharedPreferenceChangeListener prefListener = (sp, key) -> {
         if (key == null) return;
         if (key.startsWith("h_")
@@ -101,14 +109,20 @@ public class EdgeService extends AccessibilityService {
                 || Prefs.LANDSCAPE_ENABLED.equals(key)
                 || Prefs.HANDLE_WIDTH_DP.equals(key)
                 || Prefs.SHOW_INDICATOR.equals(key)
+                || Prefs.ANIM_STYLE.equals(key)
+                || Prefs.ANIM_COLOR.equals(key)
+                || Prefs.HANDLE_COLOR.equals(key)
                 || Prefs.EXCLUDED_APPS.equals(key)) {
             main.post(this::refreshHandles);
         }
-        if (Prefs.PAUSE_KEYBOARD.equals(key)) {
+        if (Prefs.PAUSE_KEYBOARD.equals(key) || Prefs.KEYBOARD_MODE.equals(key)) {
             main.post(() -> {
                 updateImeState();
-                applyVisibility();
+                refreshHandles();
             });
+        }
+        if (Prefs.HIDE_ON_HOME.equals(key)) {
+            main.post(this::applyVisibility);
         }
         if (Prefs.HIDE_NAVBAR.equals(key)) {
             main.post(this::syncNavbar);
@@ -121,7 +135,13 @@ public class EdgeService extends AccessibilityService {
         prefs = new Prefs(this);
         wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         prefs.registerListener(prefListener);
-        Log.i(TAG, "service connected");
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN);
+            home.addCategory(Intent.CATEGORY_HOME);
+            android.content.pm.ResolveInfo ri = getPackageManager().resolveActivity(home, 0);
+            if (ri != null && ri.activityInfo != null) homePkg = ri.activityInfo.packageName;
+        } catch (Exception ignored) {}
+        Log.i(TAG, "service connected homePkg=" + homePkg);
         refreshHandles();
         updateImeState();
         syncNavbar();
@@ -142,6 +162,7 @@ public class EdgeService extends AccessibilityService {
         }
         dismissPanel();
         detachAll();
+        hideOverlays();
         restoreNavbarIfOurs();
         super.onDestroy();
     }
@@ -154,6 +175,7 @@ public class EdgeService extends AccessibilityService {
         }
         dismissPanel();
         detachAll();
+        hideOverlays();
         restoreNavbarIfOurs();
         return super.onUnbind(intent);
     }
@@ -170,6 +192,15 @@ public class EdgeService extends AccessibilityService {
         if (p == null) return;
         String pkg = p.toString();
         if (pkg.equals(getPackageName())) return;
+        if (!homePkg.isEmpty() && homePkg.equals(pkg)) {
+            if (!isHome) {
+                isHome = true;
+                main.post(this::applyVisibility);
+            }
+            main.removeCallbacks(restorePkg);
+            return;
+        }
+        isHome = false;
         if (isTransient(pkg)) {
             main.removeCallbacks(restorePkg);
             main.postDelayed(restorePkg, 800);
@@ -234,6 +265,12 @@ public class EdgeService extends AccessibilityService {
         int widthPx = Du.dp(this, prefs.handleWidthDp());
         int heightPx = Math.round(size.y * prefs.handleLen(id) / 100f);
         int margin = Du.dp(this, 6);
+        int usableBottom = size.y;
+        if (imeVisible && Prefs.KB_ABOVE.equals(prefs.keyboardMode()) && imeTop > 0) {
+            usableBottom = Math.max(Du.dp(this, 240), imeTop);
+        }
+        int maxH = Math.max(Du.dp(this, 120), usableBottom - margin * 2);
+        if (heightPx > maxH) heightPx = maxH;
 
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 widthPx, heightPx,
@@ -244,10 +281,13 @@ public class EdgeService extends AccessibilityService {
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | (left ? Gravity.LEFT : Gravity.RIGHT);
         lp.x = margin;
-        lp.y = Math.max(0, Math.round((size.y - heightPx) * prefs.handlePos(id) / 100f));
+        lp.y = Math.max(0, Math.round((usableBottom - heightPx) * prefs.handlePos(id) / 100f));
 
         EdgeHandleView view = new EdgeHandleView(this, left);
         view.setBaseAlpha(prefs.showIndicator() ? Math.round(prefs.handleAlpha(id) * 255f / 100f) : 0);
+        view.setStyle(prefs.animStyle());
+        view.setColor(prefs.handleColor());
+        view.setAnimColor(prefs.animColor());
         view.setOnTouchListener(new HandleTouch(id, left));
 
         try {
@@ -267,6 +307,7 @@ public class EdgeService extends AccessibilityService {
                 && (!landscape || prefs.landscapeEnabled())
                 && !tempHidden
                 && !imeBlocked()
+                && !homeBlocked()
                 && !prefs.isExcluded(currentPkg);
         for (View v : handleViews.values()) {
             setVis(v, env);
@@ -293,7 +334,9 @@ public class EdgeService extends AccessibilityService {
         private boolean down;
         private boolean pressFired;
         private boolean holdFired;
+        private boolean instantFired;
         private long lastMoveTime;
+        private long crossTime;
 
         HandleTouch(String handleId, boolean left) {
             this.handleId = handleId;
@@ -319,6 +362,18 @@ public class EdgeService extends AccessibilityService {
             public void run() {
                 if (!down || holdFired || pressFired) return;
                 if (maxInward < shortPx()) return;
+                // 快捷操作（长滑）：达到长滑距离并按住足够时长后立即执行
+                if (!instantFired && prefs.instantLong() && prefs.longEnabled()
+                        && maxInward >= longPx() && prefs.longHoldMs() > 0
+                        && crossTime > 0 && System.currentTimeMillis() - crossTime >= prefs.longHoldMs()) {
+                    float idx = left ? (lastX - downX) : (downX - lastX);
+                    if (idx > 0) {
+                        instantFired = true;
+                        String d = dirFor(idx, lastY - downY);
+                        runGesture(handleId, "L", d, left);
+                        return;
+                    }
+                }
                 long now = System.currentTimeMillis();
                 if (now - lastMoveTime < prefs.holdMs()) {
                     main.postDelayed(this, 60);
@@ -345,6 +400,9 @@ public class EdgeService extends AccessibilityService {
                     down = true;
                     pressFired = false;
                     holdFired = false;
+                    instantFired = false;
+                    crossTime = 0;
+                    quickVibed = false;
                     downX = lastX = e.getRawX();
                     downY = lastY = e.getRawY();
                     maxInward = 0;
@@ -365,9 +423,30 @@ public class EdgeService extends AccessibilityService {
                     if (maxInward > slop || Math.hypot(lastX - downX, lastY - downY) > slop * 2f) {
                         main.removeCallbacks(pressHoldTask);
                     }
-                    if (!longFed && maxInward >= longPx()) {
+                    // 快速振动：越过触发距离立即振一次（对齐 OHO+「快速振动」）
+                    if (!quickVibed && maxInward >= shortPx()) {
+                        quickVibed = true;
+                        if (prefs.vibrate() && prefs.quickVibrate()) hapticOnce();
+                    }
+                    if (!longFed && prefs.longEnabled() && maxInward >= longPx()) {
                         longFed = true;
+                        if (crossTime == 0) crossTime = System.currentTimeMillis();
                         if (prefs.longHint()) hapticOnce();
+                    }
+                    // 快捷操作：越过阈值立即执行（不等松手）
+                    if (!instantFired && !pressFired && !holdFired && maxInward >= shortPx()) {
+                        float idir = left ? (lastX - downX) : (downX - lastX);
+                        if (idir > 0) {
+                            String d = dirFor(idir, lastY - downY);
+                            if (prefs.instantShort()) {
+                                instantFired = true;
+                                runGesture(handleId, "S", d, left);
+                            } else if (prefs.instantLong() && prefs.longEnabled()
+                                    && maxInward >= longPx() && prefs.longHoldMs() <= 0) {
+                                instantFired = true;
+                                runGesture(handleId, "L", d, left);
+                            }
+                        }
                     }
                     if (!holdFired && !pressFired && maxInward >= shortPx()) {
                         main.removeCallbacks(holdCheckTask);
@@ -380,8 +459,9 @@ public class EdgeService extends AccessibilityService {
                     main.removeCallbacks(pressHoldTask);
                     main.removeCallbacks(holdCheckTask);
                     if (v instanceof EdgeHandleView) ((EdgeHandleView) v).setActive(false);
-                    if (pressFired || holdFired) return true;
-                    commit(handleId, left, lastX - downX, lastY - downY, maxInward);
+                    if (pressFired || holdFired || instantFired) return true;
+                    long held = crossTime > 0 ? System.currentTimeMillis() - crossTime : 0;
+                    commit(handleId, left, lastX - downX, lastY - downY, maxInward, held);
                     return true;
                 }
                 case MotionEvent.ACTION_CANCEL: {
@@ -398,20 +478,23 @@ public class EdgeService extends AccessibilityService {
     }
 
     private String dirFor(float dx, float dy) {
+        int lim = prefs != null ? prefs.angleDeg() : 28;
         double angle = Math.toDegrees(Math.atan2(dy, Math.max(dx, 1f)));
-        if (angle <= -28) return "U";
-        if (angle >= 28) return "D";
+        if (angle <= -lim) return "U";
+        if (angle >= lim) return "D";
         return "H";
     }
 
-    private void commit(String handleId, boolean leftSide, float dxRaw, float dy, float maxInward) {
+    private void commit(String handleId, boolean leftSide, float dxRaw, float dy, float maxInward, long longHeldMs) {
         float dx = leftSide ? dxRaw : -dxRaw;
         if (dx <= 0 || maxInward < shortPx() * 0.6f) {
             Log.i(TAG, "gesture ignored id=" + handleId + " dx=" + dx + " inward=" + maxInward);
             return;
         }
         String dir = dirFor(dx, dy);
-        String len = maxInward >= longPx() ? "L" : "S";
+        boolean isLong = prefs.longEnabled() && maxInward >= longPx()
+                && (prefs.longHoldMs() <= 0 || longHeldMs >= prefs.longHoldMs());
+        String len = isLong ? "L" : "S";
         Log.i(TAG, "gesture id=" + handleId + " len=" + len + " dir=" + dir
                 + " inward=" + Math.round(maxInward));
         runGesture(handleId, len, dir, leftSide);
@@ -430,7 +513,7 @@ public class EdgeService extends AccessibilityService {
         }
         boolean ok = execute(action, prefs.actionPkg(slot), leftSide);
         Log.i(TAG, "gesture slot=" + slot + " action=" + action.id + " ok=" + ok);
-        if (ok && prefs.vibrate()) hapticOnce();
+        if (ok && prefs.vibrate() && !quickVibed) hapticOnce();
     }
 
     // ---------------- 动作执行 ----------------
@@ -465,6 +548,8 @@ public class EdgeService extends AccessibilityService {
                 return toggleTorch();
             case ASSISTANT:
                 return assistant();
+            case SEARCH:
+                return search();
             case LAUNCH_APP:
                 return launchApp(pkg);
             case QUICK_TOOLS:
@@ -476,6 +561,10 @@ public class EdgeService extends AccessibilityService {
             case TASK_SWITCHER:
                 showPanel(PANEL_TASK_SWITCHER, leftSide);
                 return true;
+            case TOUCHPAD:
+                return toggleTouchpad();
+            case FLOAT_NAV:
+                return toggleFloatNav();
             case VOLUME_UP:
                 return adjustVolume(AudioManager.ADJUST_RAISE);
             case VOLUME_DOWN:
@@ -502,6 +591,8 @@ public class EdgeService extends AccessibilityService {
                 return rotateTo(3);
             case NAVBAR_TOGGLE:
                 return navbarToggle();
+            case COLOR_INVERT:
+                return colorInvert();
             case HIDE_HANDLES:
                 return hideHandlesTemp();
             default:
@@ -600,6 +691,49 @@ public class EdgeService extends AccessibilityService {
         }
     }
 
+    private boolean search() {
+        try {
+            Intent i = new Intent(Intent.ACTION_WEB_SEARCH);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean toggleTouchpad() {
+        if (touchpad == null) touchpad = new TouchpadOverlay(this, () -> {});
+        touchpad.toggle();
+        return true;
+    }
+
+    private boolean toggleFloatNav() {
+        if (floatNav == null) floatNav = new FloatNavOverlay(this);
+        floatNav.toggle();
+        return true;
+    }
+
+    private boolean colorInvert() {
+        if (!NavbarHelper.granted(this)) {
+            Toast.makeText(this, "颜色反转需先通过 ADB 授权（见应用设置）", Toast.LENGTH_SHORT).show();
+            return false;
+        }
+        try {
+            int cur = Settings.Secure.getInt(getContentResolver(), "accessibility_display_inversion_enabled", 0);
+            Settings.Secure.putInt(getContentResolver(), "accessibility_display_inversion_enabled", cur == 1 ? 0 : 1);
+            Log.i(TAG, "color invert -> " + (cur == 1 ? 0 : 1));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void hideOverlays() {
+        if (touchpad != null) touchpad.hide();
+        if (floatNav != null) floatNav.hide();
+    }
+
     private void restoreNavbarIfOurs() {
         Log.i(TAG, "restore navbar check ours=" + navbarHiddenByUs);
         if (navbarHiddenByUs) {
@@ -609,7 +743,7 @@ public class EdgeService extends AccessibilityService {
     }
 
     private void maybeUpdateIme() {
-        if (prefs != null && prefs.pauseKeyboard()) {
+        if (prefs != null && !Prefs.KB_OFF.equals(prefs.keyboardMode())) {
             updateImeState();
         } else if (imeVisible) {
             imeVisible = false;
@@ -619,28 +753,45 @@ public class EdgeService extends AccessibilityService {
 
     private void updateImeState() {
         boolean v = false;
-        if (prefs != null && prefs.pauseKeyboard()) {
+        int top = 0;
+        String mode = prefs != null ? prefs.keyboardMode() : Prefs.KB_OFF;
+        if (prefs != null && !Prefs.KB_OFF.equals(mode)) {
             try {
                 List<AccessibilityWindowInfo> ws = getWindows();
                 if (ws != null) {
                     for (AccessibilityWindowInfo w : ws) {
                         if (w.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
+                            android.graphics.Rect b = new android.graphics.Rect();
+                            w.getBoundsInScreen(b);
+                            if (b.height() < Du.dp(this, 80)) continue;
                             v = true;
+                            top = b.top;
                             break;
                         }
                     }
                 }
             } catch (Exception ignored) {}
         }
-        if (v != imeVisible) {
-            imeVisible = v;
-            Log.i(TAG, "ime visible=" + v);
-            main.post(this::applyVisibility);
+        boolean changed = v != imeVisible || (v && top != imeTop);
+        imeVisible = v;
+        if (v && top > 0) imeTop = top;
+        if (changed) {
+            Log.i(TAG, "ime visible=" + v + " top=" + imeTop + " mode=" + mode);
+            if (Prefs.KB_ABOVE.equals(mode)) {
+                main.removeCallbacks(refreshForIme);
+                main.postDelayed(refreshForIme, 250);
+            } else {
+                main.post(this::applyVisibility);
+            }
         }
     }
 
     private boolean imeBlocked() {
-        return prefs != null && prefs.pauseKeyboard() && imeVisible;
+        return prefs != null && Prefs.KB_HIDE.equals(prefs.keyboardMode()) && imeVisible;
+    }
+
+    private boolean homeBlocked() {
+        return prefs != null && prefs.hideOnHome() && isHome;
     }
 
     private boolean mediaKey(int code) {
@@ -857,7 +1008,8 @@ public class EdgeService extends AccessibilityService {
         try {
             Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
             if (v != null && v.hasVibrator()) {
-                v.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE));
+                int amp = prefs != null ? prefs.vibrateAmp() : 200;
+                v.vibrate(VibrationEffect.createOneShot(15, amp));
             }
         } catch (Exception ignored) {}
     }
