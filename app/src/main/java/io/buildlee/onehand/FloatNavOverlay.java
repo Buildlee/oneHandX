@@ -43,9 +43,8 @@ public class FloatNavOverlay {
             bar.setGravity(Gravity.CENTER_VERTICAL);
             bar.setPadding(dp(6), dp(6), dp(6), dp(6));
             GradientDrawable bg = new GradientDrawable();
-            bg.setCornerRadius(dp(26));
-            bg.setColor(0xE61C1C1E);
-            bg.setStroke(dp(1), 0x33FFFFFF);
+            bg.setCornerRadius(dp(16));
+            bg.setColor(UiKit.col(svc, R.color.card));
             bar.setBackground(bg);
 
             TextView grip = makeBtn("⠿", null);
@@ -61,6 +60,8 @@ public class FloatNavOverlay {
                     if (e.getActionMasked() == MotionEvent.ACTION_MOVE) {
                         lp.x += (int) (e.getRawX() - lx);
                         lp.y += (int) (e.getRawY() - ly);
+                        lp.x = Math.max(0, Math.min(svc.getResources().getDisplayMetrics().widthPixels - root.getWidth(), lp.x));
+                        lp.y = Math.max(dp(24), Math.min(svc.getResources().getDisplayMetrics().heightPixels - root.getHeight() - dp(24), lp.y));
                         lx = e.getRawX();
                         ly = e.getRawY();
                         try { wm.updateViewLayout(root, lp); } catch (Exception ignored) {}
@@ -112,9 +113,10 @@ public class FloatNavOverlay {
         TextView t = new TextView(svc);
         t.setText(text);
         t.setTextSize(16);
-        t.setTextColor(0xE6FFFFFF);
+        t.setTextColor(UiKit.col(svc, R.color.text_primary));
         t.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams lp2 = new LinearLayout.LayoutParams(dp(36), dp(40));
+        t.setContentDescription(text.equals("×") ? "关闭浮动导航" : text.equals("◁") ? "返回" : text.equals("○") ? "主屏幕" : text.equals("▢") ? "最近任务" : "拖动浮动导航");
+        LinearLayout.LayoutParams lp2 = new LinearLayout.LayoutParams(dp(48), dp(48));
         lp2.setMargins(dp(2), 0, dp(2), 0);
         t.setLayoutParams(lp2);
         if (action != null) t.setOnClickListener(v -> action.run());

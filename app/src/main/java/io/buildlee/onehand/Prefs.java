@@ -44,6 +44,14 @@ public class Prefs {
     public static final String ANIM_STYLE = "anim_style";
     public static final String ANIM_COLOR = "anim_color";
     public static final String HANDLE_COLOR = "handle_color";
+    public static final String FEEDBACK_STYLE = "feedback_style";
+    public static final String WAVE_FILL = "wave_fill";
+    public static final String WAVE_ARROW = "wave_arrow";
+    public static final String WAVE_OUTLINE = "wave_outline";
+    public static final String WAVE_TRANSPARENCY = "wave_transparency";
+    public static final String REDUCE_MOTION = "reduce_motion";
+    public static final String THEME = "theme";
+    public static final String[] FEEDBACK_NAMES = {"贴边曲面", "细线箭头", "圆形箭头", "弧面箭头", "柔和曲线", "极简指示"};
 
     public static final String KB_ABOVE = "above";
     public static final String KB_HIDE = "hide";
@@ -166,9 +174,9 @@ public class Prefs {
         return 50;
     }
 
-    public int handleLen(String id) { return getInt("h_" + id + "_len", defaultLen(id)); }
-    public int handlePos(String id) { return getInt("h_" + id + "_pos", defaultPos(id)); }
-    public int handleAlpha(String id) { return getInt("h_" + id + "_alpha", DEF_ALPHA); }
+    public int handleLen(String id) { return Math.max(1, Math.min(100, getInt("h_" + id + "_len", defaultLen(id)))); }
+    public int handlePos(String id) { return Math.max(0, Math.min(100, getInt("h_" + id + "_pos", defaultPos(id)))); }
+    public int handleAlpha(String id) { return Math.max(0, Math.min(100, getInt("h_" + id + "_alpha", DEF_ALPHA))); }
 
     public void setHandleLen(String id, int v) { setInt("h_" + id + "_len", v); }
     public void setHandlePos(String id, int v) { setInt("h_" + id + "_pos", v); }
@@ -198,7 +206,7 @@ public class Prefs {
 
     // ---------------- 全局参数 ----------------
 
-    public int handleWidthDp() { return getInt(HANDLE_WIDTH_DP, DEF_WIDTH_DP); }
+    public int handleWidthDp() { return Math.max(8, Math.min(48, getInt(HANDLE_WIDTH_DP, DEF_WIDTH_DP))); }
 
     /** 手柄距屏幕边缘的距离（避开系统返回手势区；ColorOS 上实测约 24dp） */
     public int handleMarginDp() { return Math.max(2, Math.min(90, getInt(HANDLE_MARGIN_DP, DEF_MARGIN_DP))); }
@@ -207,8 +215,8 @@ public class Prefs {
     public boolean showIndicator() { return getBool(SHOW_INDICATOR, true); }
     public boolean vibrate() { return getBool(VIBRATE, true); }
     public boolean longHint() { return getBool(LONG_HINT, true); }
-    public int shortTriggerDp() { return getInt(SHORT_TRIGGER_DP, DEF_SHORT_DP); }
-    public int longTriggerDp() { return getInt(LONG_TRIGGER_DP, DEF_LONG_DP); }
+    public int shortTriggerDp() { return Math.max(12, Math.min(60, getInt(SHORT_TRIGGER_DP, DEF_SHORT_DP))); }
+    public int longTriggerDp() { return Math.max(100, Math.min(420, getInt(LONG_TRIGGER_DP, DEF_LONG_DP))); }
     public int holdMs() { return Math.max(150, Math.min(1200, getInt(HOLD_MS, DEF_HOLD_MS))); }
     public boolean landscapeEnabled() { return getBool(LANDSCAPE_ENABLED, false); }
 
@@ -238,6 +246,21 @@ public class Prefs {
     public int handleColorIndex() { return Math.max(0, Math.min(COLORS.length - 1, getInt(HANDLE_COLOR, 0))); }
     public int animColor() { return COLORS[animColorIndex()]; }
     public int handleColor() { return COLORS[handleColorIndex()]; }
+
+    /** 新样式使用独立键，旧版 0/1/2 的设置仍映射到对应反馈。 */
+    public int feedbackStyle() {
+        int legacy = animStyle() == 2 ? 4 : animStyle() == 1 ? 1 : 5;
+        return Math.max(0, Math.min(5, getInt(FEEDBACK_STYLE, sp.contains(ANIM_STYLE) ? legacy : 0)));
+    }
+    public int waveFill() { return getInt(WAVE_FILL, 0xFF32495D); }
+    public int waveArrow() { return getInt(WAVE_ARROW, 0xFFFFFFFF); }
+    public int waveOutline() { return getInt(WAVE_OUTLINE, 0xFFA6BDCB); }
+    public int waveTransparency() { return Math.max(0, Math.min(100, getInt(WAVE_TRANSPARENCY, 28))); }
+    public boolean reduceMotion() { return getBool(REDUCE_MOTION, false); }
+    public void resetFeedback() {
+        sp.edit().remove(WAVE_FILL).remove(WAVE_ARROW).remove(WAVE_OUTLINE)
+                .remove(WAVE_TRANSPARENCY).apply();
+    }
 
     // ---------------- 手势映射 ----------------
 
@@ -327,7 +350,7 @@ public class Prefs {
     public String dumpJson() throws JSONException {
         JSONObject root = new JSONObject();
         root.put("app", "onehand");
-        root.put("version", 5);
+        root.put("version", 6);
         JSONObject entries = new JSONObject();
         for (Map.Entry<String, ?> e : sp.getAll().entrySet()) {
             JSONObject o = new JSONObject();
@@ -344,6 +367,7 @@ public class Prefs {
     }
 
     public int applyJson(String json) throws JSONException {
+        inspectJson(json);
         JSONObject root = new JSONObject(json);
         JSONObject entries = root.optJSONObject("entries");
         if (entries == null || !"onehand".equals(root.optString("app", "onehand"))) {
@@ -367,5 +391,57 @@ public class Prefs {
         }
         editor.apply();
         return n;
+    }
+
+    /** Validate everything before clearing preferences; used both by preview and import. */
+    public String inspectJson(String json) throws JSONException {
+        JSONObject root = new JSONObject(json);
+        JSONObject entries = root.optJSONObject("entries");
+        int version = root.optInt("version", 1);
+        if (!"onehand".equals(root.optString("app")) || entries == null || version < 1 || version > 6)
+            throw new JSONException("不支持的备份格式或版本");
+        int changed = 0, missing = 0;
+        Map<String, ?> existing = sp.getAll();
+        Iterator<String> keys = entries.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            JSONObject entry = entries.getJSONObject(key);
+            String type = entry.getString("t");
+            Object value = entry.get("v");
+            boolean valid = (type.equals("b") && value instanceof Boolean)
+                    || (type.equals("s") && value instanceof String)
+                    || ((type.equals("i") || type.equals("l") || type.equals("f")) && value instanceof Number);
+            String expected = expectedType(key);
+            if (!valid || (expected != null && !expected.equals(type))) throw new JSONException("设置类型不匹配：" + key);
+            if (type.equals("i") && (((Number) value).doubleValue() != ((Number) value).intValue())) throw new JSONException("整数超出范围");
+            if (!String.valueOf(value).equals(String.valueOf(existing.get(key)))) changed++;
+            if (key.startsWith("pkg_") && value instanceof String && !((String) value).isEmpty()) {
+                try { ctx.getPackageManager().getApplicationInfo((String) value, 0); }
+                catch (Exception e) { missing++; }
+            }
+        }
+        int reset = 0;
+        for (String key : existing.keySet()) if (!entries.has(key)) reset++;
+        return "备份版本 " + version + " · " + entries.length() + " 项设置\n"
+                + changed + " 项与当前值不同\n" + missing + " 个应用绑定可能需要重新选择\n\n"
+                + (reset > 0 ? reset + " 项不在备份中，将恢复默认值。\n\n" : "")
+                + "确认后将替换当前设置；无障碍及系统授权需要在本机重新确认。";
+    }
+
+    private String expectedType(String key) {
+        if (key.startsWith("act_") || key.startsWith("pkg_") || key.startsWith("label_")
+                || key.equals(KEYBOARD_MODE) || key.equals(EXCLUDED_APPS)) return "s";
+        if (key.startsWith("h_")) return key.endsWith("_enabled") ? "b" : "i";
+        if (key.startsWith("handle_count_")) return "i";
+        for (String name : new String[]{MASTER_ENABLED, LEFT_ENABLED, RIGHT_ENABLED, SHOW_INDICATOR,
+                VIBRATE, LONG_HINT, LANDSCAPE_ENABLED, PAUSE_KEYBOARD, HIDE_NAVBAR, QUICK_VIBRATE,
+                INSTANT_SHORT, INSTANT_LONG, LONG_ENABLED, HIDE_ON_HOME, SYNC_HANDLES, REDUCE_MOTION})
+            if (key.equals(name)) return "b";
+        for (String name : new String[]{MODEL, HANDLE_WIDTH_DP, SHORT_TRIGGER_DP, LONG_TRIGGER_DP,
+                HOLD_MS, HANDLE_MARGIN_DP, ANGLE_DEG, VIBRATE_AMP, LONG_HOLD_MS, ANIM_STYLE,
+                ANIM_COLOR, HANDLE_COLOR, FEEDBACK_STYLE, WAVE_FILL, WAVE_ARROW, WAVE_OUTLINE,
+                WAVE_TRANSPARENCY, THEME, OLD_HANDLE_HEIGHT_PCT, OLD_HANDLE_POS_PCT, OLD_HANDLE_ALPHA})
+            if (key.equals(name)) return "i";
+        return null;
     }
 }

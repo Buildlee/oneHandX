@@ -23,7 +23,7 @@ public class TouchpadOverlay {
 
     private static final String TAG = "OneHand";
     private static final int PAD_DP = 190;
-    private static final int HANDLE_DP = 30;
+    private static final int HANDLE_DP = 48;
     private static final int CURSOR_DP = 26;
 
     private final AccessibilityService svc;
@@ -94,8 +94,8 @@ public class TouchpadOverlay {
         View v = new View(svc);
         GradientDrawable g = new GradientDrawable();
         g.setShape(GradientDrawable.OVAL);
-        g.setColor(0x55FFFFFF);
-        g.setStroke(dp(2), 0xCCFFFFFF);
+        g.setColor(UiKit.col(svc, R.color.accent_soft));
+        g.setStroke(dp(2), UiKit.col(svc, R.color.accent));
         v.setBackground(g);
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 dp(CURSOR_DP), dp(CURSOR_DP),
@@ -111,21 +111,21 @@ public class TouchpadOverlay {
         cursorView = v;
         wm.addView(v, lp);
         v.setAlpha(0f);
-        v.animate().alpha(1f).setDuration(220).start();
+        if (Motion.animationsEnabled(svc)) v.animate().alpha(1f).setDuration(220).start();
+        else v.setAlpha(1f);
     }
 
     private void createPad() {
         FrameLayout root = new FrameLayout(svc);
         GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(22));
-        bg.setColor(0xE61C1C1E);
-        bg.setStroke(dp(1), 0x33FFFFFF);
+        bg.setCornerRadius(dp(16));
+        bg.setColor(UiKit.col(svc, R.color.card));
         root.setBackground(bg);
 
         TextView handle = new TextView(svc);
         handle.setText("触控板");
-        handle.setTextSize(11);
-        handle.setTextColor(0x99FFFFFF);
+        handle.setTextSize(14);
+        handle.setTextColor(UiKit.col(svc, R.color.text_primary));
         handle.setGravity(Gravity.CENTER);
         FrameLayout.LayoutParams hlp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, dp(HANDLE_DP));
@@ -134,9 +134,10 @@ public class TouchpadOverlay {
         TextView close = new TextView(svc);
         close.setText("×");
         close.setTextSize(16);
-        close.setTextColor(0xCCFFFFFF);
+        close.setTextColor(UiKit.col(svc, R.color.text_primary));
+        close.setContentDescription("关闭触控板");
         close.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(dp(34), dp(34));
+        FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(dp(48), dp(48));
         clp.gravity = Gravity.TOP | Gravity.END;
         root.addView(close, clp);
         close.setOnClickListener(v -> {
@@ -146,8 +147,8 @@ public class TouchpadOverlay {
 
         TextView hint = new TextView(svc);
         hint.setText("拖动移动光标\n点按点击 · 长按长按");
-        hint.setTextSize(10);
-        hint.setTextColor(0x66FFFFFF);
+        hint.setTextSize(13);
+        hint.setTextColor(UiKit.col(svc, R.color.text_secondary));
         hint.setGravity(Gravity.CENTER);
         FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
@@ -168,7 +169,7 @@ public class TouchpadOverlay {
                         lastY = downY = e.getRawY();
                         downT = System.currentTimeMillis();
                         movedPad = false;
-                        inHandle = e.getY() < dp(HANDLE_DP) && e.getX() < padLp.width - dp(34);
+                        inHandle = e.getY() < dp(HANDLE_DP) && e.getX() < padLp.width - dp(48);
                         return true;
                     }
                     case MotionEvent.ACTION_MOVE: {
@@ -179,6 +180,8 @@ public class TouchpadOverlay {
                         if (inHandle) {
                             padLp.x += (int) dx;
                             padLp.y += (int) dy;
+                            padLp.x = (int) clamp(padLp.x, 0, screenW - padLp.width);
+                            padLp.y = (int) clamp(padLp.y, dp(24), screenH - padLp.height - dp(24));
                             try { wm.updateViewLayout(padView, padLp); } catch (Exception ignored) {}
                         } else {
                             if (Math.abs(e.getRawX() - downX) > dp(4) || Math.abs(e.getRawY() - downY) > dp(4)) {

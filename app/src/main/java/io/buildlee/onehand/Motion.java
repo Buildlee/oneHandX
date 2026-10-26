@@ -17,6 +17,7 @@ public class Motion {
 
     /** 尊重系统「移除动画」无障碍设置。 */
     public static boolean animationsEnabled(Context c) {
+        if (c.getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE).getBoolean(Prefs.REDUCE_MOTION, false)) return false;
         try {
             return Settings.Global.getFloat(c.getContentResolver(),
                     Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0.001f;
@@ -44,6 +45,7 @@ public class Motion {
     public static void pressScale(final View v) {
         if (v == null) return;
         v.setOnTouchListener((view, e) -> {
+            if (!animationsEnabled(view.getContext())) return false;
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     view.animate().scaleX(0.97f).scaleY(0.97f).setDuration(90).start();

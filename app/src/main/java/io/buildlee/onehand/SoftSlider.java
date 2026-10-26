@@ -63,6 +63,28 @@ public class SoftSlider extends View {
         listener = l;
     }
 
+    @Override public void onInitializeAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        info.setClassName(android.widget.SeekBar.class.getName());
+        info.setRangeInfo(android.view.accessibility.AccessibilityNodeInfo.RangeInfo.obtain(0, min, max, progress));
+        if (isEnabled()) {
+            info.addAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
+            info.addAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD);
+        }
+    }
+
+    @Override public boolean performAccessibilityAction(int action, android.os.Bundle args) {
+        if (isEnabled() && (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                || action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)) {
+            int step = Math.max(1, (max - min) / 20);
+            setProgress(progress + (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD ? step : -step));
+            if (listener != null) listener.accept(progress);
+            sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_SELECTED);
+            return true;
+        }
+        return super.performAccessibilityAction(action, args);
+    }
+
     private float dp(float v) {
         return v * getResources().getDisplayMetrics().density;
     }

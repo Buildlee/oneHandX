@@ -80,4 +80,32 @@ public enum GestureAction {
         }
         return NONE;
     }
+
+    public String category() {
+        switch (this) {
+            case NONE: case BACK: case HOME: case RECENTS: case PREVIOUS_APP: return "导航";
+            case QUICK_TOOLS: case QUICK_LAUNCHER: case TASK_SWITCHER: case TOUCHPAD: case FLOAT_NAV: return "面板";
+            case VOLUME_UP: case VOLUME_DOWN: case VOLUME_PANEL: case MUTE_ON: case MUTE_OFF:
+            case PLAY_PAUSE: case PREV_TRACK: case NEXT_TRACK: return "媒体";
+            case SPLIT_SCREEN: case KEYBOARD_PICKER: case NAVBAR_TOGGLE: case COLOR_INVERT: return "高级";
+            default: return "系统";
+        }
+    }
+
+    public String note() {
+        switch (this) {
+            case SPLIT_SCREEN: case KEYBOARD_PICKER: return "受系统限制，新版 Android 可能不可用";
+            case NAVBAR_TOGGLE: return "实验功能 · 需 ADB 授权，现代系统可能忽略";
+            case COLOR_INVERT: return "高级授权 · 需 WRITE_SECURE_SETTINGS";
+            case SCREEN_TIMEOUT: case ROTATE: case ROTATE_LEFT: case ROTATE_RIGHT: return "需要允许修改系统设置";
+            case SCREENSHOT: return "Android 9+ · 受保护窗口无法截图";
+            case LOCK_SCREEN: return "Android 9+";
+            case TORCH: return "受硬件、相机占用及权限限制";
+            case PLAY_PAUSE: case PREV_TRACK: case NEXT_TRACK: return "取决于当前媒体应用";
+            case TASK_SWITCHER: return "仅显示本服务观察到的应用历史";
+            case HIDE_HANDLES: return "隐藏 30 秒后自动恢复";
+            case LAUNCH_APP: return "选择动作后指定应用";
+            default: return "";
+        }
+    }
 }

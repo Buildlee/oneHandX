@@ -30,12 +30,31 @@ public class UiKit {
     }
 
     public static int col(Context c, int id) {
+        if (c instanceof android.accessibilityservice.AccessibilityService) {
+            int theme = c.getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE).getInt(Prefs.THEME, 0);
+            if (theme == 1 || theme == 2) {
+                android.content.res.Configuration config = new android.content.res.Configuration(c.getResources().getConfiguration());
+                int mode = theme == 1 ? android.content.res.Configuration.UI_MODE_NIGHT_NO : android.content.res.Configuration.UI_MODE_NIGHT_YES;
+                if ((config.uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) != mode) {
+                    config.uiMode = (config.uiMode & ~android.content.res.Configuration.UI_MODE_NIGHT_MASK) | mode;
+                    c = c.createConfigurationContext(config);
+                }
+            }
+        }
         return ContextCompat.getColor(c, id);
     }
 
     /** Android 15+ 强制 edge-to-edge：为主内容根补上系统栏内边距（状态栏 / 导航条）。 */
     public static void applyInsets(final View root) {
         if (root == null) return;
+        if (root.getContext() instanceof android.app.Activity) {
+            android.app.Activity activity = (android.app.Activity) root.getContext();
+            boolean dark = (root.getResources().getConfiguration().uiMode
+                    & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+            androidx.core.view.WindowInsetsControllerCompat controller = new androidx.core.view.WindowInsetsControllerCompat(activity.getWindow(), root);
+            controller.setAppearanceLightNavigationBars(!dark);
+            controller.setAppearanceLightStatusBars(!dark);
+        }
         final int baseTop = root.getPaddingTop();
         final int baseBottom = root.getPaddingBottom();
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
@@ -128,12 +147,13 @@ public class UiKit {
             t2.setTextSize(13f);
             t2.setTextColor(col(c, R.color.text_secondary));
             t2.setLineSpacing(dp(c, 2), 1f);
-            t2.setPadding(dp(c, 8), dp(c, 3), dp(c, 12), 0);
+            t2.setPadding(0, dp(c, 3), dp(c, 12), 0);
             texts.addView(t2);
         }
         row.addView(texts);
 
         SoftSwitch sw = new SoftSwitch(c);
+        sw.setContentDescription(title);
         sw.setChecked(checked);
         row.addView(sw);
         sw.setOnCheckedChangeListener((s, isChecked) -> {
@@ -167,6 +187,8 @@ public class UiKit {
         box.addView(header);
 
         SoftSlider sb = new SoftSlider(c);
+        sb.setContentDescription(title);
+        sb.setFocusable(true);
         sb.setRange(min, max);
         int cur = Math.max(min, Math.min(max, value));
         sb.setProgress(cur);
@@ -256,7 +278,7 @@ public class UiKit {
             t2.setTextSize(13f);
             t2.setTextColor(col(c, R.color.text_secondary));
             t2.setLineSpacing(dp(c, 2), 1f);
-            t2.setPadding(dp(c, 8), dp(c, 3), dp(c, 12), 0);
+            t2.setPadding(0, dp(c, 3), dp(c, 12), 0);
             texts.addView(t2);
         }
         row.addView(texts);
@@ -273,6 +295,27 @@ public class UiKit {
         lp.leftMargin = dp(c, 8);
         iv.setLayoutParams(lp);
         return iv;
+    }
+
+    public static SlotRow gestureRow(Context c, String title, String value, boolean left, int direction, View.OnClickListener click) {
+        LinearLayout row = new LinearLayout(c);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(c, 96));
+        row.setPadding(0, dp(c, 8), 0, dp(c, 8));
+        row.setBackgroundResource(R.drawable.bg_row);
+        FeedbackView diagram = new FeedbackView(c);
+        row.addView(diagram, new LinearLayout.LayoutParams(dp(c, 68), dp(c, 76)));
+        diagram.post(() -> diagram.show(left, left ? dp(c, 4) : dp(c, 64), dp(c, 38), dp(c, 80), dp(c, 38 * direction)));
+        LinearLayout texts = new LinearLayout(c); texts.setOrientation(LinearLayout.VERTICAL);
+        TextView name = new TextView(c); name.setText(title); name.setTextSize(14);
+        name.setTextColor(col(c, R.color.text_secondary)); texts.addView(name);
+        TextView action = new TextView(c); action.setText(value); action.setTextSize(18);
+        action.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        action.setTextColor(col(c, R.color.text_primary));
+        action.setPadding(0, dp(c, 5), 0, 0); texts.addView(action);
+        row.addView(texts, new LinearLayout.LayoutParams(0, -2, 1));
+        row.addView(chevron(c)); row.setOnClickListener(click);
+        return new SlotRow(row, action);
     }
 
     /** 主按钮：强调色胶囊（Apple 式文字按钮的实心变体）。 */

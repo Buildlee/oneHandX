@@ -53,6 +53,13 @@ public class SoftSwitch extends View {
         return checked;
     }
 
+    @Override public void onInitializeAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        info.setClassName(android.widget.Switch.class.getName());
+        info.setCheckable(true);
+        info.setChecked(checked);
+    }
+
     public void setChecked(boolean v) {
         setChecked(v, true);
     }

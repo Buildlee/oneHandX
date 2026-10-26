@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- v0.5 设计令牌（采样自 OPPO ColorOS 17 真机，2026-10-25） -->
-    <color name="bg">#F0F1F2</color>
+    <!-- v0.6：中性底色、清晰文字与单一蓝色强调 -->
+    <color name="bg">#F5F6F8</color>
     <color name="card">#FEFEFE</color>
     <!-- 卡片内分隔线（浅色 6% 黑） -->
     <color name="card_stroke">#0F000000</color>
     <color name="row_pressed">#0A000000</color>
     <color name="fill">#0F000000</color>
-    <color name="text_primary">#181818</color>
-    <color name="text_secondary">#737373</color>
-    <color name="accent">#377EF7</color>
+    <color name="text_primary">#20242B</color>
+    <color name="text_secondary">#59616D</color>
+    <color name="accent">#165DDE</color>
     <color name="accent_soft">#24377EF7</color>
     <color name="icon_tint">#7A7A7E</color>
     <color name="danger">#E5443B</color>

@@ -18,6 +18,8 @@ public class HandleEditActivity extends AppCompatActivity {
     private Prefs prefs;
     private String handleId;
     private boolean firstBuildAnim = true;
+    private boolean advanced;
+    private String selectedLength = "S";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,21 +63,30 @@ public class HandleEditActivity extends AppCompatActivity {
         root.addView(c1);
 
         LinearLayout c2 = UiKit.card(this);
-        c2.addView(UiKit.subLabel(this, "手势映射（点击修改）"));
-        c2.addView(UiKit.subLabel(this, "短滑（快速向内滑动）"));
-        for (String dir : Prefs.DIRS) c2.addView(gestureRow("S", dir));
-        c2.addView(UiKit.subLabel(this, "长滑（拖得更远；未配置时回退短滑动作）"));
-        for (String dir : Prefs.DIRS) c2.addView(gestureRow("L", dir));
-        c2.addView(UiKit.subLabel(this, "滑动保持（滑入后停住不动；保持时长见设置页「高级」）"));
-        for (String dir : Prefs.DIRS) c2.addView(gestureRow("H", dir));
-        c2.addView(UiKit.subLabel(this, "长按（按住手柄原地不动约 0.5 秒）"));
-        c2.addView(slotRowFor(Prefs.pressSlot(handleId), "长按", R.drawable.ic_swipe_h));
+        c2.addView(UiKit.subLabel(this, "从" + (handleId.startsWith("L") ? "左" : "右") + "手柄向内滑动 · 点按动作修改"));
+        LinearLayout lengths = new LinearLayout(this);
+        for (String length : new String[]{"S", "L"}) {
+            TextView tab = new TextView(this); tab.setText(length.equals("S") ? "短滑" : "长滑");
+            tab.setTextSize(15); tab.setGravity(android.view.Gravity.CENTER); tab.setMinHeight(UiKit.dp(this, 48));
+            tab.setTextColor(UiKit.col(this, length.equals(selectedLength) ? R.color.accent : R.color.text_secondary));
+            tab.setSelected(length.equals(selectedLength));
+            tab.setOnClickListener(v -> { selectedLength = length; rebuild(); });
+            lengths.addView(tab, new LinearLayout.LayoutParams(0, -2, 1));
+        }
+        c2.addView(lengths);
+        for (String dir : new String[]{"U", "H", "D"}) c2.addView(gestureRow(selectedLength, dir));
+        if (selectedLength.equals("L")) c2.addView(UiKit.subLabel(this, "未配置长滑时使用对应短滑动作；长滑总开关在设置 → 手势识别。"));
+        c2.addView(UiKit.clickRow(this, advanced ? "收起进阶手势" : "进阶手势", "滑动保持与原地长按", v -> { advanced = !advanced; rebuild(); }));
+        if (advanced) {
+            for (String dir : new String[]{"U", "H", "D"}) c2.addView(gestureRow("H", dir));
+            c2.addView(slotRowFor(Prefs.pressSlot(handleId), "原地长按", 0));
+        }
 
         LinearLayout c3 = UiKit.card(this);
         c3.addView(UiKit.subLabel(this, "尺寸与位置"));
         c3.addView(UiKit.sliderRow(this, "距屏幕边缘", 4, 80, prefs.handleMarginDp(), "dp",
                 v -> prefs.setHandleMarginDp(v)));
-        c3.addView(UiKit.subLabel(this, "提示：系统返回手势会占用屏幕最外侧约 24dp（ColorOS 实测），保持 26dp 以上可避免冲突。"));
+        c3.addView(UiKit.subLabel(this, "最外侧留给系统返回，26dp 是建议起点；仍有冲突时增加边距并试滑。不同手机的系统热区不同。"));
         c3.addView(UiKit.subLabel(this, "外观"));
         c3.addView(UiKit.sliderRow(this, "长度", 30, 95, prefs.handleLen(handleId), "%",
                 this::setLen));
@@ -83,8 +94,8 @@ public class HandleEditActivity extends AppCompatActivity {
                 this::setPos));
         c3.addView(UiKit.sliderRow(this, "不透明度", 0, 100, prefs.handleAlpha(handleId), "%",
                 v -> prefs.setHandleAlpha(handleId, v)));
-        root.addView(c3);
         root.addView(c2);
+        root.addView(c3);
 
         int index = Integer.parseInt(handleId.substring(1));
         String side = handleId.substring(0, 1);
@@ -99,6 +110,10 @@ public class HandleEditActivity extends AppCompatActivity {
         }
     }
 
+    private void rebuild() {
+        LinearLayout root = findViewById(R.id.contentRoot); root.removeAllViews(); build(root);
+    }
+
     private View gestureRow(String len, String dir) {
         return slotRowFor(Prefs.slot(handleId, len, dir),
                 lenName(len) + " · " + dirName(dir), iconForDir(dir));
@@ -106,8 +121,8 @@ public class HandleEditActivity extends AppCompatActivity {
 
     private View slotRowFor(final String slot, final String title, int iconRes) {
         final UiKit.SlotRow[] holder = new UiKit.SlotRow[1];
-        UiKit.SlotRow r = UiKit.slotRow(this, title, iconRes, prefs.displayFor(slot),
-                GestureAction.NONE.id.equals(prefs.actionId(slot)),
+        UiKit.SlotRow r = UiKit.gestureRow(this, title, prefs.displayFor(slot), handleId.startsWith("L"),
+                slot.endsWith("-U") ? -1 : slot.endsWith("-D") ? 1 : 0,
                 v -> ActionDialog.show(this, displayName() + " · " + title,
                         prefs.actionId(slot),
                         action -> {
@@ -145,9 +160,10 @@ public class HandleEditActivity extends AppCompatActivity {
     }
 
     private String dirName(String dir) {
-        if ("U".equals(dir)) return "上滑";
-        if ("D".equals(dir)) return "下滑";
-        return "直滑";
+        String inward = handleId.startsWith("L") ? "右" : "左";
+        if ("U".equals(dir)) return "向" + inward + "上滑动";
+        if ("D".equals(dir)) return "向" + inward + "下滑动";
+        return "向" + inward + "滑动";
     }
 
     private void setLen(int v) {

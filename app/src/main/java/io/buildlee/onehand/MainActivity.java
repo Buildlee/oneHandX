@@ -40,6 +40,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView statusLine;
     private TextView statusAction;
     private boolean firstBuildAnim = true;
+    private String page = "手势";
     private TextView excludeCountTv;
     private TextView navbarSummaryTv;
     private final Map<String, TextView> handleSummary = new HashMap<>();
@@ -56,6 +57,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = new Prefs(this);
+        if (savedInstanceState != null) page = savedInstanceState.getString("page", "手势");
 
         exportLauncher = registerForActivityResult(
                 new ActivityResultContracts.CreateDocument("application/json"),
@@ -64,7 +66,8 @@ public class MainActivity extends AppCompatActivity {
                     try {
                         String json = prefs.dumpJson();
                         try (OutputStream os = getContentResolver().openOutputStream(uri)) {
-                            if (os != null) os.write(json.getBytes(StandardCharsets.UTF_8));
+                            if (os == null) throw new java.io.IOException("无法写入所选文件");
+                            os.write(json.getBytes(StandardCharsets.UTF_8));
                         }
                         Toast.makeText(this, "已备份 " + prefs.countEntries() + " 项设置", Toast.LENGTH_SHORT).show();
                     } catch (Exception e) {
@@ -80,17 +83,29 @@ public class MainActivity extends AppCompatActivity {
                         StringBuilder sb = new StringBuilder();
                         try (InputStream is = getContentResolver().openInputStream(uri)) {
                             if (is == null) return;
-                            byte[] buf = new byte[65536];
+                            java.io.Reader reader = new java.io.InputStreamReader(is, StandardCharsets.UTF_8);
+                            char[] buf = new char[8192];
                             int len;
-                            while ((len = is.read(buf)) > 0) {
-                                sb.append(new String(buf, 0, len, StandardCharsets.UTF_8));
+                            while ((len = reader.read(buf)) > 0) {
+                                sb.append(buf, 0, len);
                                 if (sb.length() > 2_000_000) throw new IllegalStateException("文件过大");
                             }
                         }
-                        int n = prefs.applyJson(sb.toString());
-                        buildContent();
-                        refreshAll();
-                        Toast.makeText(this, "已恢复 " + n + " 项设置", Toast.LENGTH_SHORT).show();
+                        String json = sb.toString();
+                        String preview = prefs.inspectJson(json);
+                        new AlertDialog.Builder(this).setTitle("恢复预览").setMessage(preview)
+                                .setNegativeButton("取消", null)
+                                .setPositiveButton("确认恢复", (dialog, which) -> {
+                                    try {
+                                        int n = prefs.applyJson(json);
+                                        int theme = prefs.getInt(Prefs.THEME, 0);
+                                        androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(theme == 1
+                                                ? androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO : theme == 2
+                                                ? androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES : androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
+                                        buildContent(); refreshAll();
+                                        Toast.makeText(this, "已恢复 " + n + " 项设置", Toast.LENGTH_SHORT).show();
+                                    } catch (Exception e) { Toast.makeText(this, "恢复失败，当前配置未更改", Toast.LENGTH_LONG).show(); }
+                                }).show();
                     } catch (Exception e) {
                         Toast.makeText(this, "恢复失败：不是有效的 OneHandX 备份文件", Toast.LENGTH_LONG).show();
                     }
@@ -116,6 +131,22 @@ public class MainActivity extends AppCompatActivity {
         super.onDestroy();
     }
 
+    @Override protected void onSaveInstanceState(Bundle state) {
+        state.putString("page", page);
+        super.onSaveInstanceState(state);
+    }
+
+    @Override public void onBackPressed() {
+        if (!page.equals("手势") && !page.equals("面板") && !page.equals("设置")) navigate(page.startsWith("快速") ? "面板" : "设置");
+        else super.onBackPressed();
+    }
+
+    private void navigate(String next) {
+        page = next;
+        buildContent(); refreshAll();
+        ((android.widget.ScrollView) findViewById(R.id.scroll)).scrollTo(0, 0);
+    }
+
     // ---------------- 状态 ----------------
 
     private boolean a11yOn() {
@@ -137,9 +168,12 @@ public class MainActivity extends AppCompatActivity {
 
     private void refreshStatus() {
         if (statusLine == null) return;
-        if (a11yOn()) {
-            statusLine.setText("运行中 · 左 / 右手柄已就绪");
+        if (a11yOn() && prefs.masterEnabled()) {
+            statusLine.setText("运行中 · 从已启用的手柄向内滑动");
             if (statusAction != null) statusAction.setText("已开启");
+        } else if (a11yOn()) {
+            statusLine.setText("已暂停 · 开启下方总开关即可恢复");
+            if (statusAction != null) statusAction.setText("已授权");
         } else {
             statusLine.setText("未运行，点按开启");
             if (statusAction != null) statusAction.setText("去开启");
@@ -171,12 +205,22 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String summaryOf(String id) {
-        String s = "长度 " + prefs.handleLen(id) + "% · 位置 " + prefs.handlePos(id) + "%";
+        String s = "直滑 " + prefs.displayFor(Prefs.slot(id, "S", "H"))
+                + " · 斜上 " + prefs.displayFor(Prefs.slot(id, "S", "U"))
+                + " · 斜下 " + prefs.displayFor(Prefs.slot(id, "S", "D"));
         if (!prefs.handleEnabled(id)) s += " · 已停用";
         return s;
     }
 
     private void openA11ySettings() {
+        if (!a11yOn()) {
+            new AlertDialog.Builder(this).setTitle("开启手势服务")
+                    .setMessage("OneHandX 使用无障碍服务接收边缘手势、执行返回等操作，并识别前台应用以应用例外规则。应用无网络权限，配置与观察到的应用历史仅保存在本机。\n\n下一步会打开系统设置，请自行选择 OneHandX 并授权；拒绝不影响查看和编辑配置。")
+                    .setNegativeButton("稍后", null).setPositiveButton("前往系统设置", (d, w) -> launchA11ySettings()).show();
+        } else launchA11ySettings();
+    }
+
+    private void launchA11ySettings() {
         try {
             startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
         } catch (Exception e) {
@@ -199,6 +243,7 @@ public class MainActivity extends AppCompatActivity {
                 .setMessage("将清空全部手柄、手势映射、快速面板与反馈设置，是否继续？")
                 .setPositiveButton("恢复", (d, w) -> {
                     prefs.resetAll();
+                    androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
                     buildContent();
                     refreshAll();
                     Toast.makeText(this, "已恢复默认设置", Toast.LENGTH_SHORT).show();
@@ -214,26 +259,78 @@ public class MainActivity extends AppCompatActivity {
         handleSummary.clear();
         qtRows.clear();
         qsRows.clear();
-        root.addView(topCard());
-        root.addView(UiKit.sectionHeader(this, "手柄"));
-        root.addView(handlesCard());
-        root.addView(UiKit.sectionHeader(this, "快速面板"));
-        root.addView(quickPanelCard());
-        root.addView(UiKit.sectionHeader(this, "反馈"));
-        root.addView(feedbackCard());
-        root.addView(UiKit.sectionHeader(this, "手势设置"));
-        root.addView(gesturePrefsCard());
-        root.addView(UiKit.sectionHeader(this, "高级"));
-        root.addView(advancedCard());
-        root.addView(UiKit.sectionHeader(this, "系统增强"));
-        root.addView(enhancedCard());
-        root.addView(UiKit.sectionHeader(this, "关于"));
-        root.addView(aboutCard());
-        root.addView(footerNote());
+        statusLine = null; statusAction = null; excludeCountTv = null; navbarSummaryTv = null;
+        boolean topLevel = page.equals("手势") || page.equals("面板") || page.equals("设置");
+        ((TextView) findViewById(R.id.toolbarTitle)).setText(page.equals("手势") ? "OneHandX" : topLevel ? page : "‹ " + page);
+        findViewById(R.id.toolbarTitle).setOnClickListener(topLevel ? null : v -> navigate(page.startsWith("快速") ? "面板" : "设置"));
+        findViewById(R.id.btnReset).setVisibility(page.equals("设置") ? View.VISIBLE : View.GONE);
+        LinearLayout nav = findViewById(R.id.bottomNav);
+        nav.removeAllViews();
+        for (String tab : new String[]{"手势", "面板", "设置"}) {
+            TextView button = new TextView(this);
+            button.setText(tab); button.setTextSize(15); button.setGravity(Gravity.CENTER);
+            button.setMinHeight(UiKit.dp(this, 52));
+            boolean selected = tab.equals(page);
+            button.setSelected(selected);
+            button.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+            button.setTextColor(UiKit.col(this, selected ? R.color.accent : R.color.text_secondary));
+            button.setBackgroundResource(R.drawable.bg_row);
+            button.setOnClickListener(v -> navigate(tab));
+            nav.addView(button, new LinearLayout.LayoutParams(0, -2, 1));
+        }
+        switch (page) {
+            case "手势":
+                root.addView(topCard());
+                root.addView(UiKit.sectionHeader(this, "我的手势"));
+                root.addView(handlesCard());
+                LinearLayout tryCard = UiKit.card(this);
+                tryCard.addView(UiKit.clickRow(this, "试用手势", "只预览反馈，不执行系统动作", v -> openAppearance()));
+                tryCard.addView(UiKit.clickRow(this, "避免与系统返回冲突", "默认内移 26dp，可按手机调整", v -> navigate("系统手势共存")));
+                root.addView(tryCard);
+                break;
+            case "面板":
+                LinearLayout panels = UiKit.card(this);
+                panels.addView(UiKit.subLabel(this, "把面板绑定到手势，即可随时从边缘唤出。"));
+                panels.addView(UiKit.clickRow(this, "快速工具", "配置亮度调节与常用动作按钮", v -> navigate("快速工具")));
+                panels.addView(UiKit.clickRow(this, "快速启动器", "固定常用应用，滑动后点按打开", v -> navigate("快速启动器")));
+                panels.addView(UiKit.clickRow(this, "虚拟触控板", "移动指针、点按与长按；在手柄中绑定动作", v -> panelHelp("虚拟触控板", "在任意手柄中选择「虚拟触控板」动作。唤出后滑动移动指针，点按点击，按住执行长按。")));
+                panels.addView(UiKit.clickRow(this, "浮动导航", "返回、主屏幕、最近任务", v -> panelHelp("浮动导航", "在手柄中绑定「浮动导航按钮」，执行后显示三键浮层。应用不会自动更改系统导航方式。")));
+                panels.addView(UiKit.clickRow(this, "应用历史", "仅包含服务观察到的应用", v -> panelHelp("应用历史", "在手柄中绑定「任务切换器」。列表来自本服务观察到的应用，不是完整的系统最近任务列表。")));
+                root.addView(panels);
+                break;
+            case "设置":
+                LinearLayout settings = UiKit.card(this);
+                settings.addView(UiKit.clickRow(this, "外观与反馈", Prefs.FEEDBACK_NAMES[prefs.feedbackStyle()] + " · 配色与透明度", v -> openAppearance()));
+                settings.addView(UiKit.clickRow(this, "手势识别", "距离、角度、长滑与振动", v -> navigate("手势识别")));
+                settings.addView(UiKit.clickRow(this, "使用场景", "键盘、横屏与应用例外", v -> navigate("使用场景")));
+                settings.addView(UiKit.clickRow(this, "系统手势共存", "边距调节与兼容性说明", v -> navigate("系统手势共存")));
+                settings.addView(UiKit.clickRow(this, "备份与高级设置", "导出、恢复与实验功能", v -> navigate("备份与高级设置")));
+                root.addView(settings);
+                root.addView(aboutCard());
+                break;
+            case "手势识别":
+                root.addView(feedbackCard()); root.addView(gesturePrefsCard());
+                root.addView(advancedCard()); break;
+            case "使用场景":
+                root.addView(sceneCard()); break;
+            case "系统手势共存":
+                LinearLayout conflict = UiKit.card(this);
+                conflict.addView(UiKit.subLabel(this, "最外侧留给系统返回，从内移后的手柄起滑。先在此调整，再回到手势页试用。不同手机的热区宽度不同，26dp 是起始建议。"));
+                conflict.addView(UiKit.sliderRow(this, "距屏幕边缘", 4, 80, prefs.handleMarginDp(), "dp", prefs::setHandleMarginDp));
+                conflict.addView(UiKit.subLabel(this, "普通应用无法可靠接管所有手机的系统手势。需要完全贴边时，可自行在系统中选择三键导航，再使用浮动导航；本应用不会自动切换。"));
+                root.addView(conflict); break;
+            case "备份与高级设置": root.addView(enhancedCard()); break;
+            case "快速工具": case "快速启动器": root.addView(quickPanelCard()); break;
+        }
         if (firstBuildAnim) {
             firstBuildAnim = false;
             Motion.enterStagger(root);
         }
+    }
+
+    private void openAppearance() { startActivity(new Intent(this, AppearanceActivity.class)); }
+    private void panelHelp(String title, String message) {
+        new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("知道了", null).show();
     }
 
     private View topCard() {
@@ -278,16 +375,6 @@ public class MainActivity extends AppCompatActivity {
 
     private View handlesCard() {
         LinearLayout c = UiKit.card(this);
-        c.addView(UiKit.sliderRow(this, "手柄宽度", 8, 48, prefs.handleWidthDp(), "dp",
-                v -> prefs.setInt(Prefs.HANDLE_WIDTH_DP, v)));
-        c.addView(UiKit.switchRow(this, "显示指示条", "关闭后手柄不可见，但手势仍然可用",
-                prefs.showIndicator(), v -> prefs.setBool(Prefs.SHOW_INDICATOR, v)));
-        c.addView(UiKit.clickRow(this, "指示动画", animLabel(), v -> showAnimStyleDialog()));
-        c.addView(UiKit.clickRow(this, "指示颜色", Prefs.COLOR_NAMES[prefs.animColorIndex()],
-                v -> showColorDialog(Prefs.ANIM_COLOR, "指示颜色")));
-        c.addView(UiKit.clickRow(this, "手柄颜色", Prefs.COLOR_NAMES[prefs.handleColorIndex()],
-                v -> showColorDialog(Prefs.HANDLE_COLOR, "手柄颜色")));
-
         for (String side : Prefs.SIDES) {
             final String fs = side;
             c.addView(UiKit.subLabel(this, side.equals("L") ? "左手柄" : "右手柄"));
@@ -352,6 +439,7 @@ public class MainActivity extends AppCompatActivity {
 
     private View quickPanelCard() {
         LinearLayout c = UiKit.card(this);
+        if (page.equals("快速工具")) {
         c.addView(UiKit.subLabel(this, "快速工具按钮（手势动作「快速工具」打开）"));
         for (int i = 1; i <= QUICK_SLOTS; i++) {
             final int idx = i;
@@ -375,6 +463,7 @@ public class MainActivity extends AppCompatActivity {
             qtRows.put(i, r);
             c.addView(r.row);
         }
+        } else {
         c.addView(UiKit.subLabel(this, "快速启动器应用（手势动作「快速启动器」打开）"));
         for (int i = 1; i <= QUICK_SLOTS; i++) {
             final int idx = i;
@@ -388,6 +477,7 @@ public class MainActivity extends AppCompatActivity {
                     });
             qsRows.put(i, r);
             c.addView(r.row);
+        }
         }
         return c;
     }
@@ -409,6 +499,11 @@ public class MainActivity extends AppCompatActivity {
                 v -> prefs.setInt(Prefs.LONG_TRIGGER_DP, v)));
         c.addView(UiKit.sliderRow(this, "滑动保持时长", 200, 800, prefs.holdMs(), "ms",
                 v -> prefs.setInt(Prefs.HOLD_MS, v)));
+        return c;
+    }
+
+    private View sceneCard() {
+        LinearLayout c = UiKit.card(this);
         c.addView(UiKit.switchRow(this, "横屏时启用手势", null,
                 prefs.landscapeEnabled(), v -> prefs.setBool(Prefs.LANDSCAPE_ENABLED, v)));
 
@@ -421,6 +516,11 @@ public class MainActivity extends AppCompatActivity {
 
         c.addView(UiKit.clickRow(this, "系统权限（屏幕超时 / 旋转 / 亮度）",
                 "需要授予「修改系统设置」", v -> openWriteSettings()));
+        c.addView(UiKit.clickRow(this, "适配键盘", keyboardModeLabel(), v -> showKeyboardModeDialog()));
+        c.addView(UiKit.switchRow(this, "主屏幕时隐藏触钮", "回到桌面后自动隐藏手柄",
+                prefs.hideOnHome(), v -> prefs.setBool(Prefs.HIDE_ON_HOME, v)));
+        c.addView(UiKit.switchRow(this, "对齐触钮", "左右手柄保持相同长度与位置",
+                prefs.syncHandles(), v -> prefs.setBool(Prefs.SYNC_HANDLES, v)));
         return c;
     }
 
@@ -513,17 +613,7 @@ public class MainActivity extends AppCompatActivity {
                 prefs.quickVibrate(), v -> prefs.setBool(Prefs.QUICK_VIBRATE, v)));
         c.addView(UiKit.sliderRow(this, "振动强度", 40, 255, prefs.vibrateAmp(), "",
                 v -> prefs.setInt(Prefs.VIBRATE_AMP, v)));
-        c.addView(UiKit.clickRow(this, "适配键盘", keyboardModeLabel(), v -> showKeyboardModeDialog()));
-        c.addView(UiKit.switchRow(this, "主屏幕时隐藏触钮", "回到桌面后自动隐藏手柄",
-                prefs.hideOnHome(), v -> prefs.setBool(Prefs.HIDE_ON_HOME, v)));
-        c.addView(UiKit.switchRow(this, "对齐触钮", "左右手柄保持相同长度与位置",
-                prefs.syncHandles(), v -> prefs.setBool(Prefs.SYNC_HANDLES, v)));
         return c;
-    }
-
-    private String animLabel() {
-        String[] names = {"指示条", "箭头", "曲线"};
-        return names[prefs.animStyle()];
     }
 
     private String keyboardModeLabel() {
@@ -543,29 +633,6 @@ public class MainActivity extends AppCompatActivity {
                 .setTitle("适配键盘")
                 .setSingleChoiceItems(labels, cur, (d, which) -> {
                     prefs.setStr(Prefs.KEYBOARD_MODE, values[which]);
-                    d.dismiss();
-                    buildContent();
-                })
-                .show();
-    }
-
-    private void showAnimStyleDialog() {
-        String[] labels = {"指示条", "箭头", "曲线"};
-        new AlertDialog.Builder(this)
-                .setTitle("指示动画")
-                .setSingleChoiceItems(labels, prefs.animStyle(), (d, which) -> {
-                    prefs.setInt(Prefs.ANIM_STYLE, which);
-                    d.dismiss();
-                    buildContent();
-                })
-                .show();
-    }
-
-    private void showColorDialog(String key, String title) {
-        new AlertDialog.Builder(this)
-                .setTitle(title)
-                .setSingleChoiceItems(Prefs.COLOR_NAMES, prefs.getInt(key, 0), (d, which) -> {
-                    prefs.setInt(key, which);
                     d.dismiss();
                     buildContent();
                 })
@@ -611,15 +678,17 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout c = UiKit.card(this);
         c.setPadding(UiKit.dp(this, 16), UiKit.dp(this, 14), UiKit.dp(this, 16), UiKit.dp(this, 14));
         TextView t1 = new TextView(this);
-        t1.setText("OneHandX v0.5.1");
+        t1.setText("OneHandX");
+        try { t1.setText("OneHandX v" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName); }
+        catch (android.content.pm.PackageManager.NameNotFoundException ignored) {}
         t1.setTextSize(14);
         t1.setTypeface(Typeface.DEFAULT_BOLD);
         t1.setTextColor(UiKit.col(this, R.color.text_primary));
         TextView t2 = new TextView(this);
-        t2.setText("单手操作手势（Samsung One Hand Operation+ 核心功能复刻；参考 Fluid Navigation Gestures / Akis Gesture / EdgeGesture 等开源项目）\n"
+        t2.setText("独立的边缘手势工具 · 全部数据仅保存在本机，无网络权限。\n"
                 + "用法：从屏幕左/右侧边缘向内滑动 → 直滑 / 斜上 / 斜下；短滑触发短滑动作，拖得更远触发长滑动作；滑入后停住不动可触发「滑动保持」动作；按住手柄不动可触发「长按」动作。\n"
                 + "每侧最多 3 个手柄，可分别设置外观与手势映射。\n"
-                + "v0.5：界面按 ColorOS 17 真机采样重绘，Apple 式细节、优雅动效与高刷适配。");
+                + "贴边曲面、六种滑动样式与独立配色。部分系统动作受 Android 版本及手机权限限制。");
         t2.setTextSize(13);
         t2.setTextColor(UiKit.col(this, R.color.text_secondary));
         t2.setPadding(0, UiKit.dp(this, 6), 0, 0);

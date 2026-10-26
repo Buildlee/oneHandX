@@ -68,6 +68,8 @@ public class EdgeService extends AccessibilityService {
 
     private Prefs prefs;
     private WindowManager wm;
+    private FeedbackView feedback;
+    private final int[] feedbackLocation = new int[2];
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Map<String, View> handleViews = new HashMap<>();
     private String currentPkg = "";
@@ -100,7 +102,13 @@ public class EdgeService extends AccessibilityService {
     private final Runnable refreshForIme = this::refreshHandles;
 
     private final SharedPreferences.OnSharedPreferenceChangeListener prefListener = (sp, key) -> {
-        if (key == null) return;
+        if (key == null) {
+            main.post(() -> { refreshHandles(); dismissPanel(); hideOverlays(); syncNavbar(); });
+            return;
+        }
+        if (Prefs.THEME.equals(key)) {
+            main.post(() -> { refreshHandles(); dismissPanel(); hideOverlays(); });
+        }
         if (key.startsWith("h_")
                 || key.startsWith("handle_count_")
                 || Prefs.MASTER_ENABLED.equals(key)
@@ -111,6 +119,9 @@ public class EdgeService extends AccessibilityService {
                 || Prefs.SHOW_INDICATOR.equals(key)
                 || Prefs.ANIM_STYLE.equals(key)
                 || Prefs.ANIM_COLOR.equals(key)
+                || Prefs.HANDLE_MARGIN_DP.equals(key)
+                || Prefs.FEEDBACK_STYLE.equals(key)
+                || key.startsWith("wave_")
                 || Prefs.HANDLE_COLOR.equals(key)
                 || Prefs.EXCLUDED_APPS.equals(key)) {
             main.post(this::refreshHandles);
@@ -253,10 +264,36 @@ public class EdgeService extends AccessibilityService {
 
     private void detachAll() {
         if (wm == null) return;
+        if (feedback != null) {
+            feedback.clear();
+            try { wm.removeViewImmediate(feedback); } catch (Exception ignored) {}
+            feedback = null;
+        }
         for (View v : handleViews.values()) {
+            if (v.getTag() instanceof HandleTouch) ((HandleTouch) v.getTag()).cancel();
             try { wm.removeViewImmediate(v); } catch (Exception ignored) {}
         }
         handleViews.clear();
+    }
+
+    private void showFeedback(boolean left, float y, float inward, float dy) {
+        if (feedback == null) {
+            FeedbackView candidate = new FeedbackView(this);
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT);
+            lp.gravity = Gravity.TOP | Gravity.LEFT;
+            lp.preferredRefreshRate = Motion.maxRefreshRate(this);
+            try { wm.addView(candidate, lp); feedback = candidate; }
+            catch (Exception e) { Log.w(TAG, "feedback overlay unavailable", e); return; }
+        }
+        feedback.getLocationOnScreen(feedbackLocation);
+        float edge = left ? Du.dp(this, prefs.handleMarginDp())
+                : Du.screenSize(this).x - Du.dp(this, prefs.handleMarginDp());
+        feedback.show(left, edge - feedbackLocation[0], y - feedbackLocation[1], inward, dy);
     }
 
     private void attachHandle(String id) {
@@ -287,10 +324,11 @@ public class EdgeService extends AccessibilityService {
 
         EdgeHandleView view = new EdgeHandleView(this, left);
         view.setBaseAlpha(prefs.showIndicator() ? Math.round(prefs.handleAlpha(id) * 255f / 100f) : 0);
-        view.setStyle(prefs.animStyle());
         view.setColor(prefs.handleColor());
         view.setAnimColor(prefs.animColor());
-        view.setOnTouchListener(new HandleTouch(id, left));
+        HandleTouch touch = new HandleTouch(id, left);
+        view.setTag(touch);
+        view.setOnTouchListener(touch);
 
         try {
             wm.addView(view, lp);
@@ -314,6 +352,7 @@ public class EdgeService extends AccessibilityService {
         for (View v : handleViews.values()) {
             setVis(v, env);
         }
+        if (!env && feedback != null) feedback.clear();
     }
 
     private void setVis(View v, boolean visible) {
@@ -345,9 +384,15 @@ public class EdgeService extends AccessibilityService {
             this.left = left;
         }
 
+        void cancel() {
+            down = false;
+            main.removeCallbacks(pressHoldTask);
+            main.removeCallbacks(holdCheckTask);
+        }
+
         /** 长按手柄（原地按住不动）→ -P 槽位动作 */
         private final Runnable pressHoldTask = () -> {
-            if (!down || pressFired || holdFired) return;
+            if (!down || pressFired || holdFired || instantFired) return;
             if (maxInward > slop || Math.hypot(lastX - downX, lastY - downY) > slop * 2f) return;
             String slot = Prefs.pressSlot(handleId);
             GestureAction a = GestureAction.fromId(prefs.actionId(slot));
@@ -355,14 +400,14 @@ public class EdgeService extends AccessibilityService {
             pressFired = true;
             boolean ok = execute(a, prefs.actionPkg(slot), left);
             Log.i(TAG, "press-hold slot=" + slot + " action=" + a.id + " ok=" + ok);
-            if (ok && prefs.vibrate()) hapticOnce();
+            if (ok && prefs.vibrate() && immediateFeedback(a)) hapticOnce();
         };
 
         /** 滑动保持（滑入后停住不动，超过设定时长）→ -H-<dir> 槽位动作；未配置则不触发，松手走普通判定 */
         private final Runnable holdCheckTask = new Runnable() {
             @Override
             public void run() {
-                if (!down || holdFired || pressFired) return;
+                if (!down || holdFired || pressFired || instantFired) return;
                 if (maxInward < shortPx()) return;
                 // 快捷操作（长滑）：达到长滑距离并按住足够时长后立即执行
                 if (!instantFired && prefs.instantLong() && prefs.longEnabled()
@@ -391,7 +436,7 @@ public class EdgeService extends AccessibilityService {
                 main.removeCallbacks(pressHoldTask);
                 boolean ok = execute(a, prefs.actionPkg(slot), left);
                 Log.i(TAG, "hold slot=" + slot + " action=" + a.id + " ok=" + ok);
-                if (ok && prefs.vibrate()) hapticOnce();
+                if (ok && prefs.vibrate() && immediateFeedback(a)) hapticOnce();
             }
         };
 
@@ -421,14 +466,15 @@ public class EdgeService extends AccessibilityService {
                     lastY = e.getRawY();
                     lastMoveTime = System.currentTimeMillis();
                     float inward = left ? (lastX - downX) : (downX - lastX);
+                    showFeedback(left, downY, inward, lastY - downY);
                     if (inward > maxInward) maxInward = inward;
                     if (maxInward > slop || Math.hypot(lastX - downX, lastY - downY) > slop * 2f) {
                         main.removeCallbacks(pressHoldTask);
                     }
                     // 快速振动：越过触发距离立即振一次（对齐 OHO+「快速振动」）
-                    if (!quickVibed && maxInward >= shortPx()) {
+                    if (!quickVibed && maxInward >= shortPx() && prefs.vibrate() && prefs.quickVibrate()) {
                         quickVibed = true;
-                        if (prefs.vibrate() && prefs.quickVibrate()) hapticOnce();
+                        hapticOnce();
                     }
                     if (!longFed && prefs.longEnabled() && maxInward >= longPx()) {
                         longFed = true;
@@ -458,6 +504,7 @@ public class EdgeService extends AccessibilityService {
                     return true;
                 }
                 case MotionEvent.ACTION_UP: {
+                    if (feedback != null) feedback.dismiss();
                     down = false;
                     main.removeCallbacks(pressHoldTask);
                     main.removeCallbacks(holdCheckTask);
@@ -468,6 +515,7 @@ public class EdgeService extends AccessibilityService {
                     return true;
                 }
                 case MotionEvent.ACTION_CANCEL: {
+                    if (feedback != null) feedback.clear();
                     down = false;
                     main.removeCallbacks(pressHoldTask);
                     main.removeCallbacks(holdCheckTask);
@@ -515,13 +563,27 @@ public class EdgeService extends AccessibilityService {
             return;
         }
         boolean ok = execute(action, prefs.actionPkg(slot), leftSide);
-        Log.i(TAG, "gesture slot=" + slot + " action=" + action.id + " ok=" + ok);
-        if (ok && prefs.vibrate() && !quickVibed) hapticOnce();
+        boolean pendingShot = action == GestureAction.SCREENSHOT && Build.VERSION.SDK_INT >= 30 && ok;
+        Log.i(TAG, "gesture slot=" + slot + " action=" + action.id + (pendingShot ? " submitted=true" : " ok=" + ok));
+        if (ok && !pendingShot && prefs.vibrate() && !quickVibed) hapticOnce();
     }
 
     // ---------------- 动作执行 ----------------
 
+    private boolean immediateFeedback(GestureAction action) {
+        return action != GestureAction.SCREENSHOT || Build.VERSION.SDK_INT < 30;
+    }
+
     private boolean execute(GestureAction a, String pkg, boolean leftSide) {
+        boolean ok;
+        try { ok = executeInternal(a, pkg, leftSide); }
+        catch (RuntimeException e) { Log.w(TAG, "action failed: " + a.id, e); ok = false; }
+        if (!ok && a != GestureAction.NONE) Toast.makeText(this,
+                a.label + "未执行，请检查系统支持、应用和相关权限", Toast.LENGTH_SHORT).show();
+        return ok;
+    }
+
+    private boolean executeInternal(GestureAction a, String pkg, boolean leftSide) {
         switch (a) {
             case NONE:
                 return false;
@@ -958,17 +1020,21 @@ public class EdgeService extends AccessibilityService {
     }
 
     private boolean screenshot() {
+        final boolean alreadyVibrated = quickVibed;
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 takeScreenshot(Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
                     @Override
                     public void onSuccess(ScreenshotResult result) {
-                        saveShot(result.getHardwareBuffer(), result.getColorSpace());
+                        boolean saved = saveShot(result.getHardwareBuffer(), result.getColorSpace());
+                        Toast.makeText(EdgeService.this, saved ? "截图已保存到 Pictures/OneHand" : "截图保存失败", Toast.LENGTH_SHORT).show();
+                        if (saved && prefs.vibrate() && !alreadyVibrated) hapticOnce();
                     }
 
                     @Override
                     public void onFailure(int errorCode) {
                         Log.w(TAG, "takeScreenshot failed: " + errorCode);
+                        Toast.makeText(EdgeService.this, "截图失败，当前窗口可能受保护或系统暂不可用", Toast.LENGTH_SHORT).show();
                     }
                 });
                 return true;
@@ -981,27 +1047,38 @@ public class EdgeService extends AccessibilityService {
         return false;
     }
 
-    private void saveShot(HardwareBuffer buffer, ColorSpace colorSpace) {
+    @androidx.annotation.RequiresApi(30)
+    private boolean saveShot(HardwareBuffer buffer, ColorSpace colorSpace) {
         Bitmap bmp = null;
+        Uri pending = null;
         try {
-            bmp = Bitmap.wrapHardwareBuffer(buffer, colorSpace);
-            if (bmp == null) return;
-            bmp = bmp.copy(Bitmap.Config.ARGB_8888, false);
-            if (bmp == null) return;
+            Bitmap hardware = Bitmap.wrapHardwareBuffer(buffer, colorSpace);
+            if (hardware == null) return false;
+            try { bmp = hardware.copy(Bitmap.Config.ARGB_8888, false); }
+            finally { hardware.recycle(); }
+            if (bmp == null) return false;
             String name = "OneHand_" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".png";
             ContentValues v = new ContentValues();
             v.put(MediaStore.Images.Media.DISPLAY_NAME, name);
             v.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
             v.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/OneHand");
+            v.put(MediaStore.Images.Media.IS_PENDING, 1);
             Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
-            if (uri == null) return;
+            if (uri == null) return false;
+            pending = uri;
             try (OutputStream os = getContentResolver().openOutputStream(uri)) {
-                if (os != null) bmp.compress(Bitmap.CompressFormat.PNG, 100, os);
+                if (os == null || !bmp.compress(Bitmap.CompressFormat.PNG, 100, os)) return false;
             }
+            ContentValues published = new ContentValues(); published.put(MediaStore.Images.Media.IS_PENDING, 0);
+            if (getContentResolver().update(uri, published, null, null) <= 0) return false;
+            pending = null;
             Log.i(TAG, "screenshot saved: " + name);
+            return true;
         } catch (Throwable t) {
             Log.w(TAG, "saveShot", t);
+            return false;
         } finally {
+            if (pending != null) try { getContentResolver().delete(pending, null, null); } catch (Exception ignored) {}
             if (bmp != null) bmp.recycle();
             try { buffer.close(); } catch (Exception ignored) {}
         }
@@ -1026,11 +1103,15 @@ public class EdgeService extends AccessibilityService {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xF01C1C1E);
-        bg.setCornerRadius(Du.dp(this, 22));
+        bg.setColor(UiKit.col(this, R.color.card));
+        bg.setCornerRadius(Du.dp(this, 16));
         panel.setBackground(bg);
         int p = Du.dp(this, 10);
         panel.setPadding(p, p, p, p);
+        TextView close = panelButton("关闭面板", v -> dismissPanel());
+        close.setContentDescription("关闭面板");
+        close.setLayoutParams(new LinearLayout.LayoutParams(Du.dp(this, 190), Du.dp(this, 48)));
+        panel.addView(close);
 
         if (mode == PANEL_QUICK_TOOLS) buildQuickTools(panel);
         else if (mode == PANEL_QUICK_LAUNCHER) buildQuickLauncher(panel);
@@ -1048,19 +1129,28 @@ public class EdgeService extends AccessibilityService {
         lp.x = Du.dp(this, 20);
         lp.setTitle("OneHandPanel");
 
-        panel.setOnTouchListener((v, e) -> {
+        android.widget.ScrollView host = new android.widget.ScrollView(this) {
+            @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                int max = Math.max(Du.dp(EdgeService.this, 96), Du.screenSize(EdgeService.this).y - Du.dp(EdgeService.this, 48));
+                if (MeasureSpec.getMode(heightSpec) != MeasureSpec.UNSPECIFIED) max = Math.min(max, MeasureSpec.getSize(heightSpec));
+                super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(max, MeasureSpec.AT_MOST));
+            }
+        };
+        host.setVerticalScrollBarEnabled(false);
+        host.addView(panel);
+        host.setOnTouchListener((v, e) -> {
             if (e.getActionMasked() == MotionEvent.ACTION_OUTSIDE) dismissPanel();
             return false;
         });
 
         try {
-            wm.addView(panel, lp);
+            wm.addView(host, lp);
         } catch (Exception e) {
             Log.w(TAG, "panel addView failed", e);
             return;
         }
-        panelView = panel;
-        Motion.popIn(panel, leftSide);
+        panelView = host;
+        Motion.popIn(host, leftSide);
         main.removeCallbacks(dismissPanelRunnable);
         main.postDelayed(dismissPanelRunnable, 15000);
         Log.i(TAG, "panel shown mode=" + mode + " side=" + (leftSide ? "L" : "R"));
@@ -1085,6 +1175,8 @@ public class EdgeService extends AccessibilityService {
         } catch (Exception ignored) {}
         SeekBar sb = new SeekBar(this);
         sb.setMax(254);
+        sb.setContentDescription("屏幕亮度");
+        sb.setMinimumHeight(Du.dp(this, 48));
         sb.setProgress(Math.max(1, Math.min(255, cur)) - 1);
         sb.setEnabled(canWrite);
         sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -1111,10 +1203,11 @@ public class EdgeService extends AccessibilityService {
         if (!canWrite) {
             TextView hint = new TextView(this);
             hint.setText("亮度不可调（需「修改系统设置」权限）");
-            hint.setTextColor(0x99FFFFFF);
+            hint.setTextColor(UiKit.col(this, R.color.text_secondary));
             hint.setTextSize(11);
             hint.setPadding(Du.dp(this, 4), 0, Du.dp(this, 4), Du.dp(this, 6));
-            panel.addView(hint);
+            hint.setSingleLine(false);
+            panel.addView(hint, new LinearLayout.LayoutParams(Du.dp(this, 190), LinearLayout.LayoutParams.WRAP_CONTENT));
         }
 
         LinearLayout row = null;
@@ -1132,8 +1225,8 @@ public class EdgeService extends AccessibilityService {
                 panel.addView(row);
             }
             row.addView(panelButton(a.label, v -> {
-                execute(a, prefs.actionPkg(slot), true);
-                if (prefs.vibrate()) hapticOnce();
+                boolean ok = execute(a, prefs.actionPkg(slot), true);
+                if (ok && prefs.vibrate() && immediateFeedback(a)) hapticOnce();
                 dismissPanel();
             }));
             shown++;
@@ -1180,12 +1273,13 @@ public class EdgeService extends AccessibilityService {
         TextView t = new TextView(this);
         t.setText(label);
         t.setTextSize(14);
-        t.setTextColor(0xFFFFFFFF);
+        t.setTextColor(UiKit.col(this, R.color.text_primary));
         t.setGravity(Gravity.CENTER);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0x26FFFFFF);
+        bg.setColor(UiKit.col(this, R.color.fill));
         bg.setCornerRadius(Du.dp(this, 12));
         t.setBackground(bg);
+        t.setMinHeight(Du.dp(this, 48));
         t.setPadding(Du.dp(this, 10), Du.dp(this, 10), Du.dp(this, 10), Du.dp(this, 10));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
@@ -1202,9 +1296,10 @@ public class EdgeService extends AccessibilityService {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0x1AFFFFFF);
+        bg.setColor(UiKit.col(this, R.color.fill));
         bg.setCornerRadius(Du.dp(this, 12));
         row.setBackground(bg);
+        row.setMinimumHeight(Du.dp(this, 48));
         row.setPadding(Du.dp(this, 10), Du.dp(this, 8), Du.dp(this, 14), Du.dp(this, 8));
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                 Du.dp(this, 190), LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -1222,7 +1317,7 @@ public class EdgeService extends AccessibilityService {
         TextView label = new TextView(this);
         label.setText(appLabel(pkg));
         label.setTextSize(14);
-        label.setTextColor(0xFFFFFFFF);
+        label.setTextColor(UiKit.col(this, R.color.text_primary));
         label.setMaxLines(1);
         label.setEllipsize(android.text.TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
@@ -1248,7 +1343,7 @@ public class EdgeService extends AccessibilityService {
     private TextView panelHint(String text) {
         TextView t = new TextView(this);
         t.setText(text);
-        t.setTextColor(0x99FFFFFF);
+        t.setTextColor(UiKit.col(this, R.color.text_secondary));
         t.setTextSize(12);
         t.setPadding(Du.dp(this, 6), Du.dp(this, 4), Du.dp(this, 6), Du.dp(this, 4));
         return t;
