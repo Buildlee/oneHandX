@@ -6,21 +6,26 @@
 
 <sub>Android 8.0+ · 无障碍浮层 · 全部本地运行 · 无网络权限</sub>
 
-[![Download APK](https://img.shields.io/badge/download-APK-18181b?style=flat-square&logo=android&logoColor=ffffff)](https://github.com/Buildlee/oneHandX/releases/latest)
+[![Download APK](https://img.shields.io/badge/download-v0.6.0_preview-18181b?style=flat-square&logo=android&logoColor=ffffff)](https://github.com/Buildlee/oneHandX/releases/tag/v0.6.0)
 
 [![Release](https://img.shields.io/github/v/release/Buildlee/oneHandX?style=flat-square&label=release&labelColor=f4f4f5&color=e4e4e7)](https://github.com/Buildlee/oneHandX/releases)&nbsp;&nbsp;[![License](https://img.shields.io/badge/license-Apache--2.0-e4e4e7?style=flat-square&labelColor=f4f4f5)](LICENSE)&nbsp;&nbsp;[手势与动作](#手势与动作)&nbsp; · &nbsp;[从源码构建](#从源码构建)&nbsp; · &nbsp;[文档](docs/README.md)
 
 </div>
 
 <p align="center">
-  <img src="docs/images/v051-montage.png" width="760" alt="OneHandX 界面：主界面深色、主界面浅色、手柄编辑、动作选择">
+  <img src="docs/images/v060-home-light.png" width="185" alt="主界面浅色">
+  <img src="docs/images/v060-home-dark.png" width="185" alt="主界面深色">
+  <img src="docs/images/v060-mapping.png" width="185" alt="三方向手势映射">
+  <img src="docs/images/v060-appearance.png" width="185" alt="曲面外观与透明度">
   <br><br>
-  主界面（深色） · 主界面（浅色） · 手柄编辑 · 动作选择
+  v0.6.0 模拟器截图：浅色总览 · 深色总览 · 手势映射 · 外观与反馈
 </p>
 
 ## 这是什么
 
 OneHandX 把屏幕左右边缘变成可编程的手势区：从边缘向内滑动即可触发动作。每个手柄 10 个槽位，35 个动作可选，全部本地运行。
+
+当前试用版 **v0.6.0** 将配置整理为「手势、面板、设置」，加入六种滑动反馈、曲面独立配色与透明度、动作搜索和导入预览。已完成模拟器验证；这一版尚未在 OPPO 等真机复测。稳定版 v0.5.1 仍保留在 Releases。
 
 三条设计取向：
 
@@ -34,7 +39,7 @@ OneHandX 把屏幕左右边缘变成可编程的手势区：从边缘向内滑�
 
 ## 快速开始
 
-1. 从 [Releases](https://github.com/Buildlee/oneHandX/releases/latest) 下载最新 APK（debug 签名）。
+1. 从 [v0.6.0 试用版](https://github.com/Buildlee/oneHandX/releases/tag/v0.6.0) 下载 APK（debug 签名，与 v0.5.1 相同）。
 2. 安装后打开应用，按提示开启无障碍服务「OneHandX 手势服务」。
 3. 从屏幕左右边缘向内滑动，先试用默认映射；位置、边距、槽位映射都在应用内调整。
 4. 自行编译见[从源码构建](#从源码构建)。
@@ -44,13 +49,15 @@ OneHandX 把屏幕左右边缘变成可编程的手势区：从边缘向内滑�
 ## 主要能力
 
 - **手势槽位**：每个手柄 10 个。短滑、长滑、滑动保持（滑入后停住）三个长度 × 直滑、斜上、斜下三个方向，另加一个长按。
-- **多手柄**：左右各最多 3 个，长度、垂直位置、不透明度、边距独立设置；「对齐触钮」可左右同步。
+- **多手柄**：左右各最多 3 个，长度、垂直位置、不透明度独立设置；边距与触摸宽度共用，「对齐触钮」可同步左右长度与位置。
 - **动作库**：35 个动作。返回、主屏、最近任务、上一应用、通知面板、快捷设置、截图、锁屏、电源菜单、手电筒、音量 ±、音量面板、静音、媒体控制、屏幕超时、旋转、导航栏切换、颜色反转、搜索、打开应用、语音助手、虚拟触控板、浮动导航等。
 - **浮窗工具**：快速工具（亮度条加自定义按钮）、快速启动器、任务切换器、虚拟触控板（移动 / 点击 / 长按）、浮动导航按钮。
 - **场景适配**：键盘弹出时手柄移到键盘上方、隐藏或不处理（三模式）；主屏时可隐藏触钮；可按应用停用。
 - **识别参数**：长滑距离、手势角度（15–60°）、长滑按住时长、越过阈值立即执行（短滑与长滑分别开关）、振动与强度。
-- **界面**：设计令牌采样自 ColorOS 17 真机（深色 `#000000 / #1A1A1A / #428AF7`，浅色 `#F0F1F2 / #FEFEFE / #377EF7`），自绘胶囊开关与滑块，深 / 浅双主题。
-- **高刷新率**：手柄窗口声明 `preferredRefreshRate`；OPPO Find X10 Pro Max 实测 144Hz 生效，gfxinfo 中位帧间隔 10ms、卡顿 0.69%。
+- **外观与反馈**：贴边曲面、细线箭头、圆形箭头、弧面箭头、柔和曲线、极简指示。曲面背景、箭头、轮廓分别设色，背景透明度 0–100%；试滑区与真实浮层共用原生绘制器。
+- **界面**：手势 / 面板 / 设置三栏，短滑与长滑分别编辑，动作搜索与分类，跟随系统 / 浅色 / 深色和减少动态效果。
+- **备份**：导入前校验格式与类型，预览变更数量和缺失应用，再确认覆盖；保留旧版映射和样式设置。
+- **高刷新率**：手柄与反馈窗口声明 `preferredRefreshRate`。v0.5 曾在 OPPO 上验证 144Hz；v0.6 的新反馈尚未在高刷真机复测。
 
 ## 手势与动作
 
@@ -87,7 +94,9 @@ OneHandX 把屏幕左右边缘变成可编程的手势区：从边缘向内滑�
 
 ## 状态与验证
 
-已验证（OPPO Find X10 Pro Max，ColorOS 17 / Android 17）：
+**v0.6.0**：Android 12L / API 32 模拟器，450dp 常规字体与 320dp、1.3 倍字体，深浅主题四种组合各通过 56 项检查。构建与 Lint 通过；检查内容、真实手势服务及尚未覆盖项见 [v0.6 验证记录](docs/v0.6-验证记录.md)。
+
+以下为 **v0.5 历史验证**（OPPO Find X10 Pro Max，ColorOS 17 / Android 17），不代表 v0.6 已在该设备复测：
 
 - 手势回归：直滑返回、斜上主屏、斜下最近任务；26dp 边距的边界行为（84px 被系统接管，91px 起正常）。
 - 高刷：`preferredRefreshRate=144`，滚动 581 帧，卡顿 0.69%，帧间隔中位 10ms。
@@ -152,6 +161,7 @@ OneHandPlus/
 | [边缘手势冲突研究](docs/边缘手势冲突研究.md) | 返回手势热区机制、ADB 可调性、ColorOS 全局动作缺陷 |
 | [参考项目研究](docs/参考项目研究.md) | Fluid NG、Akış、XGesture、EdgeGesture 的实现对照 |
 | [v0.5 验证记录](docs/v0.5-验证记录.md) | 真机逐项验证与证据 |
+| [v0.6 验证记录](docs/v0.6-验证记录.md) | 三栏导航、原生曲面、配置兼容与模拟器检查 |
 | [UI 概念稿](docs/mockup.html) | 已签核的界面方向，浏览器打开 |
 
 ## 许可与边界
