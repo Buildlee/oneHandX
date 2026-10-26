@@ -6,7 +6,7 @@
 
 <sub>Android 8.0+ · 无障碍浮层 · 全部本地运行 · 无网络权限</sub>
 
-[![Download APK](https://img.shields.io/badge/download-v0.6.0_preview-18181b?style=flat-square&logo=android&logoColor=ffffff)](https://github.com/Buildlee/oneHandX/releases/tag/v0.6.0)
+[![Download APK](https://img.shields.io/badge/download-v0.6.1_preview-18181b?style=flat-square&logo=android&logoColor=ffffff)](https://github.com/Buildlee/oneHandX/releases/tag/v0.6.1)
 
 [![Release](https://img.shields.io/github/v/release/Buildlee/oneHandX?style=flat-square&label=release&labelColor=f4f4f5&color=e4e4e7)](https://github.com/Buildlee/oneHandX/releases)&nbsp;&nbsp;[![License](https://img.shields.io/badge/license-Apache--2.0-e4e4e7?style=flat-square&labelColor=f4f4f5)](LICENSE)&nbsp;&nbsp;[手势与动作](#手势与动作)&nbsp; · &nbsp;[从源码构建](#从源码构建)&nbsp; · &nbsp;[文档](docs/README.md)
 
@@ -25,7 +25,7 @@
 
 OneHandX 把屏幕左右边缘变成可编程的手势区：从边缘向内滑动即可触发动作。每个手柄 10 个槽位，35 个动作可选，全部本地运行。
 
-当前试用版 **v0.6.0** 将配置整理为「手势、面板、设置」，加入六种滑动反馈、曲面独立配色与透明度、动作搜索和导入预览。已完成模拟器验证；这一版尚未在 OPPO 等真机复测。稳定版 v0.5.1 仍保留在 Releases。
+当前试用版 **v0.6.1** 在三栏导航、独立配色和动作搜索的基础上，统一页面、弹层、控件与曲面收回动效，支持快速打断和减少动态效果。已完成模拟器验证；这一版尚未在 OPPO 等真机复测。稳定版 v0.5.1 仍保留在 Releases。
 
 三条设计取向：
 
@@ -39,7 +39,7 @@ OneHandX 把屏幕左右边缘变成可编程的手势区：从边缘向内滑�
 
 ## 快速开始
 
-1. 从 [v0.6.0 试用版](https://github.com/Buildlee/oneHandX/releases/tag/v0.6.0) 下载 APK（debug 签名，与 v0.5.1 相同）。
+1. 从 [v0.6.1 试用版](https://github.com/Buildlee/oneHandX/releases/tag/v0.6.1) 下载 APK（debug 签名，与 v0.5.1 / v0.6.0 相同）。
 2. 安装后打开应用，按提示开启无障碍服务「OneHandX 手势服务」。
 3. 从屏幕左右边缘向内滑动，先试用默认映射；位置、边距、槽位映射都在应用内调整。
 4. 自行编译见[从源码构建](#从源码构建)。
