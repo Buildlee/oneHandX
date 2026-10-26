@@ -92,7 +92,7 @@ public class MainActivity extends AppCompatActivity {
                         refreshAll();
                         Toast.makeText(this, "已恢复 " + n + " 项设置", Toast.LENGTH_SHORT).show();
                     } catch (Exception e) {
-                        Toast.makeText(this, "恢复失败：不是有效的 OneHand+ 备份文件", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "恢复失败：不是有效的 OneHandX 备份文件", Toast.LENGTH_LONG).show();
                     }
                 });
 
@@ -271,7 +271,7 @@ public class MainActivity extends AppCompatActivity {
         statusRow.setOnClickListener(v -> openA11ySettings());
         c.addView(statusRow);
 
-        c.addView(UiKit.switchRow(this, "启用 OneHand+", "总开关；关闭后全部手柄停止工作",
+        c.addView(UiKit.switchRow(this, "启用 OneHandX", "总开关；关闭后全部手柄停止工作",
                 prefs.masterEnabled(), v -> prefs.setBool(Prefs.MASTER_ENABLED, v)));
         return c;
     }
@@ -611,7 +611,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout c = UiKit.card(this);
         c.setPadding(UiKit.dp(this, 16), UiKit.dp(this, 14), UiKit.dp(this, 16), UiKit.dp(this, 14));
         TextView t1 = new TextView(this);
-        t1.setText("OneHand+ v0.5.0");
+        t1.setText("OneHandX v0.5.1");
         t1.setTextSize(14);
         t1.setTypeface(Typeface.DEFAULT_BOLD);
         t1.setTextColor(UiKit.col(this, R.color.text_primary));

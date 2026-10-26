@@ -347,7 +347,7 @@ public class Prefs {
         JSONObject root = new JSONObject(json);
         JSONObject entries = root.optJSONObject("entries");
         if (entries == null || !"onehand".equals(root.optString("app", "onehand"))) {
-            throw new JSONException("不是 OneHand+ 备份文件");
+            throw new JSONException("不是 OneHandX 备份文件");
         }
         SharedPreferences.Editor editor = sp.edit().clear();
         int n = 0;
