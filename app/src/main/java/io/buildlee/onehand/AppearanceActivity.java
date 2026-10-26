@@ -22,6 +22,8 @@ public class AppearanceActivity extends AppCompatActivity {
     private LinearLayout controls;
     private boolean left = true;
 
+    @Override public void finish() { super.finish(); Motion.closeActivity(this); }
+
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = new Prefs(this);
@@ -76,7 +78,7 @@ public class AppearanceActivity extends AppCompatActivity {
             b.setGravity(Gravity.CENTER); b.setMinHeight(dp(48));
             b.setTextColor(UiKit.col(this, R.color.accent));
             b.setBackgroundResource(R.drawable.bg_row);
-            b.setOnClickListener(v -> preview.show(left, left ? dp(10) : preview.getWidth() - dp(10), dp(104), dp(112), dp(42 * direction)));
+            b.setOnClickListener(v -> preview.demonstrate(left, left ? dp(10) : preview.getWidth() - dp(10), dp(104), dp(112), dp(42 * direction)));
             demo.addView(b, new LinearLayout.LayoutParams(0, -2, 1));
         }
         page.addView(demo);

@@ -182,7 +182,7 @@ public class ActionDialog {
             win.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             win.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             win.setDimAmount(0.45f);
-            win.setWindowAnimations(R.style.SheetAnim);
+            win.setWindowAnimations(Motion.animationsEnabled(ctx) ? R.style.SheetAnim : 0);
             WindowManager.LayoutParams wlp = win.getAttributes();
             wlp.gravity = Gravity.BOTTOM;
             wlp.width = WindowManager.LayoutParams.MATCH_PARENT;

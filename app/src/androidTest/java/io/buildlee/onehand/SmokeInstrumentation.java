@@ -21,8 +21,9 @@ public class SmokeInstrumentation extends Instrumentation {
     private Prefs prefs;
     private String original;
     private int theme;
+    private boolean motionMode;
 
-    @Override public void onCreate(Bundle args) { super.onCreate(args); theme = Integer.parseInt(args.getString("theme", "1")); start(); }
+    @Override public void onCreate(Bundle args) { super.onCreate(args); theme = Integer.parseInt(args.getString("theme", "1")); motionMode = args.getString("motion", "false").equals("true"); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
@@ -34,6 +35,10 @@ public class SmokeInstrumentation extends Instrumentation {
             prefs.setInt(Prefs.THEME, theme);
             runOnMainSync(() -> androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(theme == 2
                     ? androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES : androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO));
+            if (motionMode) {
+                int count = new MotionChecks(this, prefs).run(); restore();
+                result.putString("stream", "PASS: " + count + " motion checks\n"); finish(Activity.RESULT_OK, result); return;
+            }
             prefs.setBool(Prefs.REDUCE_MOTION, true);
             Activity main = launch(MainActivity.class);
             check((main.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)

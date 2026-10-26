@@ -8,7 +8,6 @@ import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.animation.PathInterpolator;
 
 import java.util.function.IntConsumer;
 
@@ -30,6 +29,8 @@ public class SoftSlider extends View {
     private boolean tracking;
     private IntConsumer listener;
     private ValueAnimator grabAnimator;
+    private ValueAnimator settleAnimator;
+    private float visualProgress;
 
     public SoftSlider(Context c) {
         this(c, null);
@@ -55,7 +56,9 @@ public class SoftSlider extends View {
     }
 
     public void setProgress(int p) {
+        if (settleAnimator != null) settleAnimator.cancel();
         progress = Math.max(min, Math.min(max, p));
+        visualProgress = progress;
         invalidate();
     }
 
@@ -102,8 +105,8 @@ public class SoftSlider extends View {
         float cy = h / 2f;
         float baseR = dp(13.5f);
         float pad = baseR + dp(1);
-        float radius = baseR * (1f + 0.15f * grab);
-        float frac = (progress - min) / (float) (max - min);
+        float radius = baseR * (1f + 0.08f * grab);
+        float frac = (visualProgress - min) / (float) (max - min);
         float cx = pad + (w - 2 * pad) * frac;
 
         float trackH = dp(7f);
@@ -130,6 +133,7 @@ public class SoftSlider extends View {
         if (!isEnabled()) return false;
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN: {
+                if (settleAnimator != null) settleAnimator.cancel();
                 if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
                 tracking = true;
                 animateGrab(1f);
@@ -145,6 +149,7 @@ public class SoftSlider extends View {
                 tracking = false;
                 if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
                 animateGrab(0f);
+                settleThumb();
                 return true;
             }
             default:
@@ -157,6 +162,8 @@ public class SoftSlider extends View {
         float pad = dp(13.5f) + dp(1);
         float frac = (x - pad) / Math.max(1f, w - 2 * pad);
         frac = Math.max(0f, Math.min(1f, frac));
+        visualProgress = min + frac * (max - min);
+        postInvalidateOnAnimation();
         int v = Math.round(min + frac * (max - min));
         if (v != progress) {
             progress = v;
@@ -166,19 +173,34 @@ public class SoftSlider extends View {
     }
 
     private void animateGrab(float target) {
+        if (grabAnimator != null) grabAnimator.cancel();
         if (!Motion.animationsEnabled(getContext())) {
             grab = target;
             invalidate();
             return;
         }
-        if (grabAnimator != null) grabAnimator.cancel();
         grabAnimator = ValueAnimator.ofFloat(grab, target);
-        grabAnimator.setDuration(target > grab ? 160 : 220);
-        grabAnimator.setInterpolator(new PathInterpolator(0.3f, 0.9f, 0.3f, 1f));
+        grabAnimator.setDuration(target > grab ? Motion.PRESS_MS : Motion.EXIT_MS);
+        grabAnimator.setInterpolator(Motion.EMPHASIS);
         grabAnimator.addUpdateListener(a -> {
             grab = (float) a.getAnimatedValue();
             invalidate();
         });
         grabAnimator.start();
+    }
+
+    private void settleThumb() {
+        if (settleAnimator != null) settleAnimator.cancel();
+        if (!Motion.animationsEnabled(getContext())) { visualProgress = progress; invalidate(); return; }
+        settleAnimator = ValueAnimator.ofFloat(visualProgress, progress);
+        settleAnimator.setDuration(100); settleAnimator.setInterpolator(Motion.EMPHASIS);
+        settleAnimator.addUpdateListener(a -> { visualProgress = (float) a.getAnimatedValue(); invalidate(); });
+        settleAnimator.start();
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        if (grabAnimator != null) grabAnimator.cancel();
+        if (settleAnimator != null) settleAnimator.cancel();
+        tracking = false; grab = 0f; visualProgress = progress; super.onDetachedFromWindow();
     }
 }

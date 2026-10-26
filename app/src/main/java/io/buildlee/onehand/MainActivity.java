@@ -39,7 +39,6 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout root;
     private TextView statusLine;
     private TextView statusAction;
-    private boolean firstBuildAnim = true;
     private String page = "手势";
     private TextView excludeCountTv;
     private TextView navbarSummaryTv;
@@ -142,9 +141,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void navigate(String next) {
+        if (page.equals(next)) return;
+        boolean peer = (page.equals("手势") || page.equals("面板") || page.equals("设置"))
+                && (next.equals("手势") || next.equals("面板") || next.equals("设置"));
+        int direction = peer ? 0 : (next.equals("设置") || next.equals("面板") ? -1 : 1);
         page = next;
         buildContent(); refreshAll();
         ((android.widget.ScrollView) findViewById(R.id.scroll)).scrollTo(0, 0);
+        Motion.contentIn(root, direction);
     }
 
     // ---------------- 状态 ----------------
@@ -255,6 +259,7 @@ public class MainActivity extends AppCompatActivity {
     // ---------------- 界面构建 ----------------
 
     private void buildContent() {
+        Motion.reset(root);
         root.removeAllViews();
         handleSummary.clear();
         qtRows.clear();
@@ -322,13 +327,9 @@ public class MainActivity extends AppCompatActivity {
             case "备份与高级设置": root.addView(enhancedCard()); break;
             case "快速工具": case "快速启动器": root.addView(quickPanelCard()); break;
         }
-        if (firstBuildAnim) {
-            firstBuildAnim = false;
-            Motion.enterStagger(root);
-        }
     }
 
-    private void openAppearance() { startActivity(new Intent(this, AppearanceActivity.class)); }
+    private void openAppearance() { startActivity(new Intent(this, AppearanceActivity.class)); Motion.openActivity(this); }
     private void panelHelp(String title, String message) {
         new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("知道了", null).show();
     }
@@ -432,7 +433,7 @@ public class MainActivity extends AppCompatActivity {
             Intent i = new Intent(this, HandleEditActivity.class);
             i.putExtra(HandleEditActivity.EXTRA_HANDLE_ID, id);
             startActivity(i);
-            overridePendingTransition(R.anim.push_in, R.anim.fade_out_slight);
+            Motion.openActivity(this);
         });
         return row;
     }
@@ -455,7 +456,7 @@ public class MainActivity extends AppCompatActivity {
                                     it.putExtra(AppPickerActivity.EXTRA_SLOT, s);
                                     it.putExtra(AppPickerActivity.EXTRA_SLOT_NAME, "快速工具 · 按钮 " + idx);
                                     startActivity(it);
-                                    overridePendingTransition(R.anim.push_in, R.anim.fade_out_slight);
+                                    Motion.openActivity(this);
                                 } else {
                                     refreshSummaries();
                                 }
@@ -473,7 +474,7 @@ public class MainActivity extends AppCompatActivity {
                         it.putExtra(AppPickerActivity.EXTRA_SLOT, prefs.quickAppSlot(idx));
                         it.putExtra(AppPickerActivity.EXTRA_SLOT_NAME, "快速启动器 · 应用 " + idx);
                         startActivity(it);
-                        overridePendingTransition(R.anim.push_in, R.anim.fade_out_slight);
+                        Motion.openActivity(this);
                     });
             qsRows.put(i, r);
             c.addView(r.row);

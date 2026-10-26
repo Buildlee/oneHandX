@@ -1,6 +1,9 @@
 package io.buildlee.onehand;
 
 import android.content.Context;
+import android.animation.ValueAnimator;
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -17,6 +20,10 @@ public class FeedbackView extends View {
     private boolean left = true;
     private boolean visible;
     private int sampleStyle = -1;
+    private float release = 1f;
+    private ValueAnimator releaseAnimator;
+    private ValueAnimator demoAnimator;
+    private final Runnable endDemo = this::dismiss;
 
     public FeedbackView(Context context) {
         super(context);
@@ -28,38 +35,82 @@ public class FeedbackView extends View {
     public void setSampleStyle(int style) { sampleStyle = style; }
 
     public void show(boolean fromLeft, float edge, float y, float inward, float dy) {
-        animate().cancel();
+        cancelMotion();
         setAlpha(1f);
+        release = 1f;
+        updateGeometry(fromLeft, edge, y, inward, dy);
+    }
+
+    private void updateGeometry(boolean fromLeft, float edge, float y, float inward, float dy) {
         left = fromLeft;
         origin = edge;
         center = y;
         distance = Math.max(0, inward);
         deltaY = dy;
         visible = true;
-        invalidate();
+        postInvalidateOnAnimation();
+    }
+
+    /** User-requested demo only; real dragging always updates geometry directly. */
+    public void demonstrate(boolean fromLeft, float edge, float y, float inward, float dy) {
+        show(fromLeft, edge, y, 0, 0);
+        if (!Motion.animationsEnabled(getContext())) { show(fromLeft, edge, y, inward, dy); return; }
+        demoAnimator = ValueAnimator.ofFloat(0f, 1f);
+        demoAnimator.setDuration(Motion.ENTER_MS);
+        demoAnimator.setInterpolator(Motion.EMPHASIS);
+        demoAnimator.addUpdateListener(a -> {
+            float t = (float) a.getAnimatedValue();
+            setAlpha(t);
+            updateGeometry(fromLeft, edge, y, inward * t, dy * t);
+        });
+        demoAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(Animator animation) { demoAnimator = null; postDelayed(endDemo, 100); }
+        });
+        demoAnimator.start();
     }
 
     public void dismiss() {
-        animate().cancel();
         if (!Motion.animationsEnabled(getContext())) { clear(); return; }
-        animate().alpha(0f).setDuration(180).setInterpolator(Motion.EMPHASIS).withEndAction(this::clear).start();
+        if (!visible || releaseAnimator != null) return;
+        cancelMotion();
+        releaseAnimator = ValueAnimator.ofFloat(release, 0f);
+        releaseAnimator.setDuration(Motion.EXIT_MS);
+        releaseAnimator.setInterpolator(Motion.EXIT);
+        releaseAnimator.addUpdateListener(a -> {
+            release = (float) a.getAnimatedValue(); setAlpha(release); postInvalidateOnAnimation();
+        });
+        releaseAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(Animator animation) { releaseAnimator = null; clear(); }
+        });
+        releaseAnimator.start();
     }
 
     public void clear() {
-        animate().cancel();
+        cancelMotion();
         visible = false;
+        release = 1f;
         setAlpha(1f);
         invalidate();
     }
 
-    @Override protected void onDetachedFromWindow() { animate().cancel(); super.onDetachedFromWindow(); }
+    private void cancelMotion() {
+        removeCallbacks(endDemo);
+        if (releaseAnimator != null) {
+            releaseAnimator.removeAllListeners(); releaseAnimator.removeAllUpdateListeners(); releaseAnimator.cancel(); releaseAnimator = null;
+        }
+        if (demoAnimator != null) {
+            demoAnimator.removeAllListeners(); demoAnimator.removeAllUpdateListeners(); demoAnimator.cancel(); demoAnimator = null;
+        }
+    }
+
+    @Override protected void onDetachedFromWindow() { clear(); super.onDetachedFromWindow(); }
 
     @Override protected void onDraw(Canvas c) {
         if (!visible) return;
         float d = getResources().getDisplayMetrics().density;
         int style = sampleStyle >= 0 ? sampleStyle : prefs.feedbackStyle();
         float halfHeight = Math.min(96 * d, getHeight() * .48f);
-        float w = Math.min(halfHeight * .396f, Math.max(10 * d, Math.min(38 * d, distance * .34f)));
+        float w = Math.min(halfHeight * .396f, Math.max(10 * d, Math.min(38 * d, distance * .34f))) * release;
         float cy = Math.max(halfHeight, Math.min(getHeight() - halfHeight, center + deltaY * .25f));
         c.save();
         c.translate(origin, cy);
@@ -83,8 +134,9 @@ public class FeedbackView extends View {
             paint.setStrokeWidth(d);
             c.drawPath(body, paint);
         }
-        float x = style == 0 ? w * .48f : Math.min(64 * d, Math.max(24 * d, distance * .48f));
+        float x = style == 0 ? w * .48f : Math.min(64 * d, Math.max(24 * d, distance * .48f)) * release;
         c.translate(x, 0);
+        c.scale(.8f + .2f * release, .8f + .2f * release);
         c.rotate((float) Math.toDegrees(Math.atan2(deltaY, Math.max(distance, d))));
         paint.setColor(style == 0 ? prefs.waveArrow() : prefs.animColor());
         paint.setStrokeWidth(2.4f * d);

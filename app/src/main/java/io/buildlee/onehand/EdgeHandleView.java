@@ -4,9 +4,7 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.RectF;
 import android.view.View;
-import android.view.animation.PathInterpolator;
 
 import androidx.core.graphics.ColorUtils;
 
@@ -65,18 +63,18 @@ public class EdgeHandleView extends View {
     }
 
     private void startAnim() {
+        if (animator != null) animator.cancel();
         if (!Motion.animationsEnabled(getContext())) {
             activeAmt = actTarget;
             hotAmt = hotTarget;
             invalidate();
             return;
         }
-        if (animator != null) animator.cancel();
         final float a0 = activeAmt, h0 = hotAmt;
         final float a1 = actTarget, h1 = hotTarget;
         animator = ValueAnimator.ofFloat(0f, 1f);
-        animator.setDuration(220);
-        animator.setInterpolator(new PathInterpolator(0.2f, 0f, 0f, 1f));
+        animator.setDuration(actTarget > activeAmt || hotTarget > hotAmt ? Motion.PRESS_MS : Motion.EXIT_MS);
+        animator.setInterpolator(Motion.EMPHASIS);
         animator.addUpdateListener(v -> {
             float t = (float) v.getAnimatedValue();
             activeAmt = a0 + (a1 - a0) * t;
@@ -101,10 +99,10 @@ public class EdgeHandleView extends View {
         if (glow > 0.02f) {
             glowPaint.setColor(animColor);
             glowPaint.setAlpha((int) (0x30 * glow));
-            canvas.drawRoundRect(new RectF(x - dp(7), top - dp(3), x + barW + dp(7), top + barH + dp(3)),
+            canvas.drawRoundRect(x - dp(7), top - dp(3), x + barW + dp(7), top + barH + dp(3),
                     rad + dp(4), rad + dp(4), glowPaint);
             glowPaint.setAlpha((int) (0x66 * glow));
-            canvas.drawRoundRect(new RectF(x - dp(3), top - dp(1), x + barW + dp(3), top + barH + dp(1)),
+            canvas.drawRoundRect(x - dp(3), top - dp(1), x + barW + dp(3), top + barH + dp(1),
                     rad + dp(2), rad + dp(2), glowPaint);
         }
 
@@ -113,7 +111,7 @@ public class EdgeHandleView extends View {
         paint.setColor(ColorUtils.blendARGB(color, animColor,
                 Math.min(0.55f, 0.25f * activeAmt + 0.45f * hotAmt)));
         paint.setAlpha(alpha);
-        canvas.drawRoundRect(new RectF(x, top, x + barW, top + barH), rad, rad, paint);
+        canvas.drawRoundRect(x, top, x + barW, top + barH, rad, rad, paint);
 
     }
 

@@ -8,7 +8,6 @@ import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.animation.PathInterpolator;
 
 import androidx.core.graphics.ColorUtils;
 
@@ -34,6 +33,7 @@ public class SoftSwitch extends View {
     private float press = 1f;
     private OnCheckedChangeListener listener;
     private ValueAnimator animator;
+    private ValueAnimator pressAnimator;
 
     public SoftSwitch(Context c) {
         this(c, null);
@@ -72,8 +72,8 @@ public class SoftSwitch extends View {
         if (animator != null) animator.cancel();
         if (animate && from != target && Motion.animationsEnabled(getContext())) {
             animator = ValueAnimator.ofFloat(from, target);
-            animator.setDuration(240);
-            animator.setInterpolator(new PathInterpolator(0.3f, 0.9f, 0.3f, 1f));
+            animator.setDuration(Motion.CHANGE_MS);
+            animator.setInterpolator(Motion.EMPHASIS);
             animator.addUpdateListener(a -> {
                 anim = (float) a.getAnimatedValue();
                 invalidate();
@@ -101,21 +101,34 @@ public class SoftSwitch extends View {
         if (!isEnabled()) return false;
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                press = 0.94f;
-                invalidate();
+                animatePress(.96f);
                 return true;
             case MotionEvent.ACTION_UP:
-                press = 1f;
-                invalidate();
+                animatePress(1f);
                 performClick();
                 return true;
             case MotionEvent.ACTION_CANCEL:
-                press = 1f;
-                invalidate();
+                animatePress(1f);
                 return true;
             default:
                 return super.onTouchEvent(e);
         }
+    }
+
+    private void animatePress(float target) {
+        if (pressAnimator != null) pressAnimator.cancel();
+        if (!Motion.animationsEnabled(getContext())) { press = target; invalidate(); return; }
+        pressAnimator = ValueAnimator.ofFloat(press, target);
+        pressAnimator.setDuration(target < press ? Motion.PRESS_MS : Motion.EXIT_MS);
+        pressAnimator.setInterpolator(Motion.EMPHASIS);
+        pressAnimator.addUpdateListener(a -> { press = (float) a.getAnimatedValue(); invalidate(); });
+        pressAnimator.start();
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        if (animator != null) animator.cancel();
+        if (pressAnimator != null) pressAnimator.cancel();
+        anim = checked ? 1f : 0f; press = 1f; super.onDetachedFromWindow();
     }
 
     @Override

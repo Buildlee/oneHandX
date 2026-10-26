@@ -28,6 +28,7 @@ import java.util.Locale;
 import java.util.Map;
 
 public class AppPickerActivity extends AppCompatActivity {
+    @Override public void finish() { super.finish(); Motion.closeActivity(this); }
 
     public static final String EXTRA_SLOT = "slot";
     public static final String EXTRA_SLOT_NAME = "slot_name";
@@ -58,7 +59,6 @@ public class AppPickerActivity extends AppCompatActivity {
 
         findViewById(R.id.btnBack).setOnClickListener(v -> {
             finish();
-            overridePendingTransition(R.anim.fade_in_slight, R.anim.push_out);
         });
         TextView sub = findViewById(R.id.pickerSub);
         sub.setText(slotName == null ? "" : "指定给：" + slotName);
@@ -75,7 +75,6 @@ public class AppPickerActivity extends AppCompatActivity {
             prefs.setActionLabel(slot, e.label);
             Toast.makeText(this, "已设置：" + e.label, Toast.LENGTH_SHORT).show();
             finish();
-            overridePendingTransition(R.anim.fade_in_slight, R.anim.push_out);
         });
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}

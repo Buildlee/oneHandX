@@ -17,7 +17,6 @@ public class HandleEditActivity extends AppCompatActivity {
 
     private Prefs prefs;
     private String handleId;
-    private boolean firstBuildAnim = true;
     private boolean advanced;
     private String selectedLength = "S";
 
@@ -32,10 +31,8 @@ public class HandleEditActivity extends AppCompatActivity {
             return;
         }
         prefs = new Prefs(this);
-        findViewById(R.id.btnBack).setOnClickListener(v -> {
-            finish();
-            overridePendingTransition(R.anim.fade_in_slight, R.anim.push_out);
-        });
+        if (savedInstanceState != null) { advanced = savedInstanceState.getBoolean("advanced"); selectedLength = savedInstanceState.getString("length", "S"); }
+        findViewById(R.id.btnBack).setOnClickListener(v -> finish());
         TextView title = findViewById(R.id.handleTitle);
         title.setText(displayName());
     }
@@ -46,10 +43,11 @@ public class HandleEditActivity extends AppCompatActivity {
         LinearLayout root = findViewById(R.id.contentRoot);
         root.removeAllViews();
         build(root);
-        if (firstBuildAnim) {
-            firstBuildAnim = false;
-            Motion.enterStagger(root);
-        }
+    }
+
+    @Override public void finish() { super.finish(); Motion.closeActivity(this); }
+    @Override protected void onSaveInstanceState(Bundle out) {
+        out.putBoolean("advanced", advanced); out.putString("length", selectedLength); super.onSaveInstanceState(out);
     }
 
     private String displayName() {
@@ -70,17 +68,32 @@ public class HandleEditActivity extends AppCompatActivity {
             tab.setTextSize(15); tab.setGravity(android.view.Gravity.CENTER); tab.setMinHeight(UiKit.dp(this, 48));
             tab.setTextColor(UiKit.col(this, length.equals(selectedLength) ? R.color.accent : R.color.text_secondary));
             tab.setSelected(length.equals(selectedLength));
-            tab.setOnClickListener(v -> { selectedLength = length; rebuild(); });
+            tab.setOnClickListener(v -> { if (!length.equals(selectedLength)) { selectedLength = length; rebuild(); } });
             lengths.addView(tab, new LinearLayout.LayoutParams(0, -2, 1));
         }
         c2.addView(lengths);
         for (String dir : new String[]{"U", "H", "D"}) c2.addView(gestureRow(selectedLength, dir));
         if (selectedLength.equals("L")) c2.addView(UiKit.subLabel(this, "未配置长滑时使用对应短滑动作；长滑总开关在设置 → 手势识别。"));
-        c2.addView(UiKit.clickRow(this, advanced ? "收起进阶手势" : "进阶手势", "滑动保持与原地长按", v -> { advanced = !advanced; rebuild(); }));
-        if (advanced) {
-            for (String dir : new String[]{"U", "H", "D"}) c2.addView(gestureRow("H", dir));
-            c2.addView(slotRowFor(Prefs.pressSlot(handleId), "原地长按", 0));
-        }
+        LinearLayout advancedRows = new LinearLayout(this); advancedRows.setOrientation(LinearLayout.VERTICAL);
+        for (String dir : new String[]{"U", "H", "D"}) advancedRows.addView(gestureRow("H", dir));
+        advancedRows.addView(slotRowFor(Prefs.pressSlot(handleId), "原地长按", 0));
+        advancedRows.setVisibility(advanced ? View.VISIBLE : View.GONE);
+        advancedRows.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            public void onViewAttachedToWindow(View view) {}
+            public void onViewDetachedFromWindow(View view) {
+                if (view.getTag() instanceof android.animation.ValueAnimator) {
+                    android.animation.ValueAnimator animation = (android.animation.ValueAnimator) view.getTag();
+                    animation.removeAllListeners(); animation.cancel(); view.setTag(null);
+                }
+            }
+        });
+        LinearLayout toggle = UiKit.clickRow(this, advanced ? "收起进阶手势" : "进阶手势", "滑动保持与原地长按", null);
+        toggle.setOnClickListener(v -> {
+            advanced = !advanced;
+            ((TextView) ((LinearLayout) toggle.getChildAt(0)).getChildAt(0)).setText(advanced ? "收起进阶手势" : "进阶手势");
+            Motion.expand(advancedRows, advanced);
+        });
+        c2.addView(toggle); c2.addView(advancedRows);
 
         LinearLayout c3 = UiKit.card(this);
         c3.addView(UiKit.subLabel(this, "尺寸与位置"));
@@ -111,7 +124,7 @@ public class HandleEditActivity extends AppCompatActivity {
     }
 
     private void rebuild() {
-        LinearLayout root = findViewById(R.id.contentRoot); root.removeAllViews(); build(root);
+        LinearLayout root = findViewById(R.id.contentRoot); Motion.reset(root); root.removeAllViews(); build(root); Motion.contentIn(root, 0);
     }
 
     private View gestureRow(String len, String dir) {
@@ -132,7 +145,7 @@ public class HandleEditActivity extends AppCompatActivity {
                                 i.putExtra(AppPickerActivity.EXTRA_SLOT, slot);
                                 i.putExtra(AppPickerActivity.EXTRA_SLOT_NAME, displayName() + " · " + title);
                                 startActivity(i);
-                                overridePendingTransition(R.anim.push_in, R.anim.fade_out_slight);
+                                Motion.openActivity(this);
                             } else {
                                 boolean none = GestureAction.NONE.id.equals(prefs.actionId(slot));
                                 holder[0].value.setText(prefs.displayFor(slot));
@@ -153,7 +166,6 @@ public class HandleEditActivity extends AppCompatActivity {
                     prefs.setHandleCount(side, prefs.handleCount(side) - 1);
                     Toast.makeText(this, "已删除", Toast.LENGTH_SHORT).show();
                     finish();
-                    overridePendingTransition(R.anim.fade_in_slight, R.anim.push_out);
                 })
                 .setNegativeButton("取消", null)
                 .show();
