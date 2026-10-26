@@ -4,20 +4,19 @@
 
 **屏幕边缘的手势工作台**
 
-Android 8.0+ · 无障碍浮层 · 无网络权限 · Apache-2.0
+<sub>Android 8.0+ · 无障碍浮层 · 无网络权限 · Apache-2.0</sub>
 
-[![Release](https://img.shields.io/github/v/release/Buildlee/oneHandX?style=flat-square&label=release&color=1a1a1a)](https://github.com/Buildlee/oneHandX/releases/latest)
-[![License](https://img.shields.io/badge/license-Apache--2.0-1a1a1a?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/Android-8.0%2B-1a1a1a?style=flat-square)](https://developer.android.com)
-[![Network](https://img.shields.io/badge/network-none-1a1a1a?style=flat-square)](#)
+[![Release](https://img.shields.io/github/v/release/Buildlee/oneHandX?style=flat-square&labelColor=3f3f46&color=71717a&label=release)](https://github.com/Buildlee/oneHandX/releases/latest)&nbsp;&nbsp;[![License](https://img.shields.io/badge/license-Apache--2.0-71717a?style=flat-square&labelColor=3f3f46)](LICENSE)&nbsp;&nbsp;[![Platform](https://img.shields.io/badge/Android-8.0%2B-71717a?style=flat-square&labelColor=3f3f46)](https://developer.android.com)
 
-[下载](https://github.com/Buildlee/oneHandX/releases/latest) · [主要能力](#主要能力) · [手势与动作](#手势与动作) · [从源码构建](#从源码构建) · [文档](docs/README.md)
+**[下载最新版本](https://github.com/Buildlee/oneHandX/releases/latest)**&nbsp; · &nbsp;[手势与动作](#手势与动作)&nbsp; · &nbsp;[从源码构建](#从源码构建)&nbsp; · &nbsp;[文档](docs/README.md)
 
 </div>
 
 <p align="center">
-  <img src="docs/images/v05-montage.png" width="860" alt="OneHandX：主界面深色与浅色、手柄编辑、动作选择弹层">
+  <img src="docs/images/v05-montage.png" width="780" alt="OneHandX：主界面深色与浅色、手柄编辑、动作选择弹层">
 </p>
+
+<p align="center"><sub>主界面（深色 / 浅色） · 手柄编辑 · 动作选择</sub></p>
 
 ## 这是什么
 
@@ -25,8 +24,10 @@ OneHandX 把屏幕左右边缘变成可编程的手势区：从边缘向内滑�
 
 三条设计取向：
 
-- **不抢系统的手势区**：手柄默认内移 26dp，系统返回手势与自定义手势各管一段；
-- **不做系统级侵入**：一个无障碍服务加浮层窗口即可，不需要 root、Shizuku，也不改系统设置；
+- **不抢系统的手势区**：手柄默认内移 26dp，系统返回手势与自定义手势各管一段。
+
+- **不做系统级侵入**：一个无障碍服务加浮层窗口即可，不需要 root、Shizuku，也不改系统设置。
+
 - **不替用户预设**：所有映射可改，配置可整体导出与恢复。
 
 > **独立实现声明**：本项目与三星电子无关联，未使用其代码、安装包或美术素材。"One Hand Operation+"、"One UI"、"Good Lock" 是三星电子的产品名 / 商标，仅用于说明功能背景。详见 [许可与边界](#许可与边界)。
