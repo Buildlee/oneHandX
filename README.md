@@ -6,16 +6,16 @@
 
 <sub>Android 8.0+ · 无障碍浮层 · 全部本地运行 · 无网络权限</sub>
 
-[![Download APK](https://img.shields.io/badge/download-APK-18181b?style=flat-square&logo=android&logoColor=ffffff)](https://github.com/Buildlee/oneHandX/releases/latest)&nbsp;&nbsp;[![Release](https://img.shields.io/github/v/release/Buildlee/oneHandX?style=flat-square&label=release&labelColor=f4f4f5&color=e4e4e7)](https://github.com/Buildlee/oneHandX/releases)&nbsp;&nbsp;[![License](https://img.shields.io/badge/license-Apache--2.0-e4e4e7?style=flat-square&labelColor=f4f4f5)](LICENSE)
+[![Download APK](https://img.shields.io/badge/download-APK-18181b?style=flat-square&logo=android&logoColor=ffffff)](https://github.com/Buildlee/oneHandX/releases/latest)
 
-[手势与动作](#手势与动作)&nbsp; · &nbsp;[从源码构建](#从源码构建)&nbsp; · &nbsp;[文档](docs/README.md)
+[![Release](https://img.shields.io/github/v/release/Buildlee/oneHandX?style=flat-square&label=release&labelColor=f4f4f5&color=e4e4e7)](https://github.com/Buildlee/oneHandX/releases)&nbsp;&nbsp;[![License](https://img.shields.io/badge/license-Apache--2.0-e4e4e7?style=flat-square&labelColor=f4f4f5)](LICENSE)&nbsp;&nbsp;[手势与动作](#手势与动作)&nbsp; · &nbsp;[从源码构建](#从源码构建)&nbsp; · &nbsp;[文档](docs/README.md)
 
 </div>
 
 <p align="center">
   <img src="docs/images/v051-montage.png" width="760" alt="OneHandX 界面：主界面深色、主界面浅色、手柄编辑、动作选择">
   <br><br>
-  <sub>主界面（深色）· 主界面（浅色）· 手柄编辑 · 动作选择</sub>
+  主界面（深色） · 主界面（浅色） · 手柄编辑 · 动作选择
 </p>
 
 ## 这是什么
