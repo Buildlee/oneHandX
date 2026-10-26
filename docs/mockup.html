@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>OneHand+ v0.5 · UI 概念稿（ColorOS 17 适配）</title>
+<style>
+  /* ============ 页面框架（非设计的一部分，仅用于展示） ============ */
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  body { margin: 0; background: #0B0B0C; color: #d8d8da;
+         font-family: 'OPPO Sans','HarmonyOS Sans SC','PingFang SC','Microsoft YaHei UI',system-ui,sans-serif; }
+  .wrap { padding: 30px 34px 40px; }
+  .phead { margin-bottom: 22px; }
+  .phead h1 { font-size: 21px; margin: 0 0 6px; color: #f2f2f4; letter-spacing: .2px; }
+  .phead .sub { font-size: 13px; color: #9a9a9e; line-height: 1.7; max-width: 900px; }
+  .meta { display: flex; gap: 34px; margin-top: 14px; flex-wrap: wrap; }
+  .metaBox { font-size: 12px; color: #a8a8ac; line-height: 1.9; max-width: 520px; }
+  .metaBox b { color: #e6e6e8; font-weight: 600; }
+  .chips { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; align-items: center; }
+  .chip { width: 22px; height: 22px; border-radius: 7px; border: 1px solid rgba(255,255,255,.16); }
+  .chipLabel { font-size: 11px; color: #8b8b90; margin-right: 2px; }
+  .frames { display: flex; gap: 30px; align-items: flex-start; }
+  .fcol { display: flex; flex-direction: column; }
+  .cap { margin-top: 12px; font-size: 12.5px; color: #8f8f94; text-align: center; letter-spacing: .3px; }
+  .cap b { color: #c9c9cd; font-weight: 600; }
+
+  /* ============ 设计令牌（来自 ColorOS 17 真机采样） ============ */
+  .dark {
+    --bg:#000000; --card:#1A1A1A; --card2:#232323; --pri:#ECECEC; --sec:#959595;
+    --divider:rgba(255,255,255,.08); --accent:#428AF7; --accentSoft:rgba(66,138,247,.16);
+    --sw-off:#3A3A3C; --danger:#FF6B61; --ghost:rgba(255,255,255,.06);
+  }
+  .light {
+    --bg:#F0F1F2; --card:#FEFEFE; --card2:#F4F5F6; --pri:#181818; --sec:#737373;
+    --divider:rgba(0,0,0,.06); --accent:#377EF7; --accentSoft:rgba(55,126,247,.10);
+    --sw-off:#E0E0E0; --danger:#E5443B; --ghost:rgba(0,0,0,.045);
+  }
+  .frame { width: 363px; height: 792px; border-radius: 40px; overflow: hidden; flex: 0 0 auto;
+           background: var(--bg); color: var(--pri); position: relative;
+           box-shadow: 0 0 0 9px #060607, 0 26px 70px rgba(0,0,0,.65), 0 2px 0 rgba(255,255,255,.05) inset; }
+  .statusbar { display: flex; justify-content: space-between; padding: 13px 24px 0; font-size: 13px;
+               color: var(--pri); opacity: .85; font-weight: 500; }
+  .page { padding: 16px 18px 0; }
+  .h1 { font-size: 30px; font-weight: 700; letter-spacing: -.5px; margin: 8px 2px 16px; line-height: 1.12; }
+  .navbar { display: flex; align-items: center; gap: 12px; padding: 8px 0 6px; }
+  .navbar .back { width: 34px; height: 34px; border-radius: 50%; background: var(--card2);
+                  display: flex; align-items: center; justify-content: center; }
+  .navbar .back svg { display: block; }
+  .navbar .title { font-size: 20px; font-weight: 700; letter-spacing: .1px; }
+  .secLabel { font-size: 12.5px; color: var(--sec); margin: 22px 4px 7px; letter-spacing: .3px; }
+  .card { background: var(--card); border-radius: 24px; padding: 0 16px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 11px 0; min-height: 58px; }
+  .row + .row { border-top: 1px solid var(--divider); }
+  .col { flex: 1 1 auto; min-width: 0; }
+  .grow { flex: 1 1 auto; }
+  .t { font-size: 16.5px; font-weight: 500; color: var(--pri); line-height: 1.3; letter-spacing: -.15px; }
+  .sub { font-size: 13px; color: var(--sec); margin-top: 3px; line-height: 1.35; }
+  .val { font-size: 15px; color: var(--sec); flex: 0 0 auto; letter-spacing: -.15px; }
+  .accent { color: var(--accent); }
+  .danger { color: var(--danger); }
+  svg.chev { flex: 0 0 auto; opacity: .38; } svg.chev path { stroke-width: 1.9; }
+  .dark svg.chev { stroke:#9a9a9e; } .light svg.chev { stroke:#8a8a8e; }
+
+  /* 开关（胶囊 + 白色圆钮，50×30 iOS 比例） */
+  .sw { width: 50px; height: 30px; border-radius: 15px; background: var(--sw-off); position: relative;
+        flex: 0 0 auto; transition: background .22s ease; }
+  .sw::after { content:""; position:absolute; top:2px; left:2px; width:26px; height:26px; border-radius:50%;
+        background:#fff; box-shadow: 0 1.5px 5px rgba(0,0,0,.35), 0 0 1px rgba(0,0,0,.18);
+        transition: transform .26s cubic-bezier(.3,.9,.3,1); }
+  .sw.on { background: var(--accent); }
+  .sw.on::after { transform: translateX(20px); }
+
+  /* 滑块（ColorOS 风格：细轨 + 白色大圆钮） */
+  .slider { height: 30px; display: flex; align-items: center; margin: 0 0 12px; }
+  .track { height: 8px; border-radius: 4px; background: var(--sw-off); width: 100%; position: relative; }
+  .fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 4px; background: var(--accent); }
+  .thumb { position: absolute; width: 27px; height: 27px; border-radius: 50%; background: #fff; top: 50%;
+           transform: translate(-50%,-50%); box-shadow: 0 1.5px 6px rgba(0,0,0,.4); }
+  .thumb.grab { width: 31px; height: 31px; box-shadow: 0 0 0 8px var(--accentSoft), 0 2px 8px rgba(0,0,0,.35); }
+
+  /* 按钮 */
+  .btn { background: var(--accent); color: #fff; border-radius: 999px; padding: 9px 20px;
+         font-size: 15px; font-weight: 600; flex: 0 0 auto; letter-spacing: .3px; }
+  .btn.ghost { background: transparent; color: var(--accent); padding: 9px 10px; }
+
+  /* 手柄预览图（编辑页顶部） */
+  .preview { height: 148px; border-radius: 24px; background: var(--card); position: relative; overflow: hidden; }
+  .preview .edge { position: absolute; left: 0; top: 26px; bottom: 26px; width: 12px; border-radius: 0 8px 8px 0;
+                   background: var(--ghost); }
+  .preview .bar { position: absolute; left: 5px; top: 44px; bottom: 44px; width: 4px; border-radius: 4px;
+                  background: var(--accent); box-shadow: 0 0 12px var(--accentSoft); }
+  .preview .hint-a { position: absolute; left: 34px; top: 46%; font-size: 12.5px; color: var(--sec); }
+  .preview .arrows { position: absolute; right: 20px; top: 0; bottom: 0; width: 90px; }
+  .preview .arr { position: absolute; font-size: 12px; color: var(--sec); }
+  .preview rect { fill: var(--ghost); }
+
+  .frame.fade::after { content:""; position:absolute; left:0; right:0; bottom:0; height:64px;
+        background: linear-gradient(to top, var(--bg), transparent); pointer-events:none; height: 80px; }
+  .grabber { width: 38px; height: 5px; border-radius: 2.5px; background: var(--sw-off); margin: 10px auto 3px; }
+  .sheet .row { min-height: 54px; }
+
+  /* 弹层 */
+  .dim { position: absolute; inset: 0; background: rgba(0,0,0,.52); }
+  .sheet { position: absolute; left: 8px; right: 8px; bottom: 8px; background: var(--card);
+           border-radius: 28px; padding: 6px 18px 14px; box-shadow: 0 -12px 40px rgba(0,0,0,.45); }
+  .sheetTitle { font-size: 17px; font-weight: 700; padding: 14px 2px 8px; }
+  .sheetTitle .sub { display: inline; font-weight: 400; }
+  .radio { width: 24px; height: 24px; flex: 0 0 auto; position: relative; }
+  .radio::before { content:"\2713"; position:absolute; left:50%; top:50%; transform:translate(-50%,-54%);
+        font-size: 18px; font-weight: 600; color: var(--accent); opacity: 0; }
+  .radio.on::before { opacity: 1; }
+
+  /* 组件演示区 */
+  .demo { position: absolute; left: 20px; right: 20px; }
+  .panelDark { background: rgba(26,26,26,.94); border-radius: 24px; box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06); }
+  .pad { height: 168px; border-radius: 16px; background: rgba(255,255,255,.06); margin: 14px; position: relative; }
+  .pad::after { content:"拖动移动光标 · 点按单击 · 按住 0.6 秒"; position: absolute; left: 0; right: 0; bottom: 12px;
+                text-align: center; font-size: 11.5px; color: #8b8b90; }
+  .pad .cursor { position: absolute; left: 46%; top: 40%; width: 14px; height: 14px; border-radius: 50%;
+                 background: #fff; box-shadow: 0 0 0 6px rgba(66,138,247,.35); }
+  .capsule { background: rgba(26,26,26,.94); border-radius: 999px; padding: 10px 14px; display: flex; gap: 10px;
+             box-shadow: 0 14px 40px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.06); width: max-content; margin: 0 auto; }
+  .cirbtn { width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.09);
+            display: flex; align-items: center; justify-content: center; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 14px; }
+  .tool { height: 62px; border-radius: 16px; background: rgba(255,255,255,.07); display: flex; flex-direction: column;
+          align-items: center; justify-content: center; gap: 5px; font-size: 11px; color: #b9b9bd; }
+  .handleStrip { position: absolute; left: 8px; top: 120px; bottom: 120px; width: 4px; border-radius: 4px; }
+  .hs-idle { background: rgba(255,255,255,.62); box-shadow: 0 0 8px rgba(255,255,255,.28); }
+  .hs-active { background: var(--accent); box-shadow: 0 0 14px rgba(66,138,247,.6); }
+  .hs-thresh { background: var(--accent); box-shadow: 0 0 4px 2px rgba(66,138,247,.8), 0 0 20px 7px rgba(66,138,247,.4); }
+
+  /* 设计自查表 */
+  .audit { margin-top: 44px; max-width: 2200px; }
+  .audit h2 { font-size: 16px; color: #e8e8ea; margin: 0 0 12px; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  td { border-top: 1px solid rgba(255,255,255,.07); padding: 8px 12px; vertical-align: top; line-height: 1.55; }
+  td:first-child { color: #b9b9bd; width: 340px; }
+  .ok { color: #66d19e; } .dev { color: #e8b64c; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="phead">
+    <h1>OneHand+ v0.5 · UI 概念稿 —— ColorOS 17 系统风格适配</h1>
+    <div class="sub">
+      设计令牌全部采样自 OPPO Find X10 Pro Max（ColorOS 17 / Android 17，2026-10-25 真机截图），
+      并执行 impeccable × taste-skill 双规范：单一强调色、无渐变/玻璃拟态默认、克制的动效、两套完整主题。
+      字体在实际设备上以 OPPO Sans 渲染（此预览为本机字体）。
+    </div>
+    <div class="meta">
+      <div class="metaBox"><b>深色令牌</b>
+        <div class="chips">
+          <span class="chipLabel">bg</span><span class="chip" style="background:#000000"></span>
+          <span class="chipLabel">card</span><span class="chip" style="background:#1A1A1A"></span>
+          <span class="chipLabel">text</span><span class="chip" style="background:#ECECEC"></span>
+          <span class="chipLabel">sec</span><span class="chip" style="background:#959595"></span>
+          <span class="chipLabel">accent</span><span class="chip" style="background:#428AF7"></span>
+          <span class="chipLabel">off</span><span class="chip" style="background:#3A3A3C"></span>
+        </div>
+      </div>
+      <div class="metaBox"><b>浅色令牌</b>
+        <div class="chips">
+          <span class="chipLabel">bg</span><span class="chip" style="background:#F0F1F2"></span>
+          <span class="chipLabel">card</span><span class="chip" style="background:#FEFEFE"></span>
+          <span class="chipLabel">text</span><span class="chip" style="background:#181818"></span>
+          <span class="chipLabel">sec</span><span class="chip" style="background:#737373"></span>
+          <span class="chipLabel">accent</span><span class="chip" style="background:#377EF7"></span>
+          <span class="chipLabel">off</span><span class="chip" style="background:#E0E0E0"></span>
+        </div>
+      </div>
+      <div class="metaBox"><b>三旋钮</b> VARIANCE 3 · MOTION 4 · DENSITY 4<br>
+        <span style="color:#8b8b90">（设置类应用基线 2-3 / 2-3 / 3-4；MOTION 上调至 4：
+        手势工具本身就是“动效产品”，功能动效升级为优雅、有物理来源的过渡）</span></div>
+      <div class="metaBox"><b>动效一览</b><br>
+        · 页面进入：卡片淡入 + 上移 12dp，260ms 强调缓出<br>
+        · 子页切换：右滑入 24dp + 淡入 280ms / 返回 200ms<br>
+        · 按压：状态层着色 + 按钮 0.98 缩放（软弹簧）<br>
+        · 开关：圆钮 220ms 弹簧 + 轨道渐变；滑块抓取圆钮 22→26dp<br>
+        · 手柄指示：触摸 180ms 淡入、拖动跟手、长滑阈值 强调色高亮 + 轻震、松手 240ms 归位<br>
+        · 全部动画走系统 VSync（120Hz 逐帧），跟随“移除动画”无障碍开关<br>· <b>Apple 式精修（本轮反馈）</b>：大标题 30px 负字距、勾选代单选、开关 50×30 近 iOS 比例、弹层阻尼弹簧</div>
+      <div class="metaBox"><b>系统手势共存（真机实测结论）</b><br>
+        ColorOS 返回手势会抢占屏幕最外侧约 24dp 的触摸（x ≤ 84px 实测被吞、x ≥ 90px 正常）。
+        v0.5 手柄默认内移，避开抢占区 → 见「手柄编辑」页的手柄尺寸设置。</div>
+    </div>
+  </div>
+
+  <div class="frames">
+
+    <!-- ========== ① 主界面 · 深色 ========== -->
+    <div class="fcol">
+      <div class="frame dark fade">
+        <div class="statusbar"><span>23:25</span><span>5G · 55%</span></div>
+        <div class="page">
+          <div class="h1">OneHand+</div>
+
+          <div class="card">
+            <div class="row">
+              <div class="col"><div class="t">手势服务</div><div class="sub">未运行，点按开启</div></div>
+              <div class="val accent" style="font-weight:600">去开启</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+          </div>
+
+          <div class="secLabel">手柄</div>
+          <div class="card">
+            <div class="row">
+              <div class="col"><div class="t">左手柄</div><div class="sub">1 个 · 长度 70% · 居中</div></div>
+              <div class="sw on"></div>
+            </div>
+            <div class="row">
+              <div class="col"><div class="t">右手柄</div><div class="sub">1 个 · 长度 70% · 居中</div></div>
+              <div class="sw on"></div>
+            </div>
+            <div class="row">
+              <div class="col"><div class="t accent" style="font-weight:600">添加手柄</div>
+                   <div class="sub">每侧最多 3 个，各自独立映射</div></div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+          </div>
+
+          <div class="secLabel">手势</div>
+          <div class="card">
+            <div class="row" style="padding-bottom:4px">
+              <div class="t">短滑触发距离</div><div class="grow"></div><div class="val">28dp</div>
+            </div>
+            <div class="slider"><div class="track"><div class="fill" style="width:30%"></div>
+              <div class="thumb" style="left:30%"></div></div></div>
+            <div class="row" style="padding-bottom:4px;border-top:1px solid var(--divider)">
+              <div class="t">手势角度</div><div class="grow"></div><div class="val">28°</div>
+            </div>
+            <div class="slider"><div class="track"><div class="fill" style="width:42%"></div>
+              <div class="thumb" style="left:42%"></div></div></div>
+            <div class="row">
+              <div class="col"><div class="t">长距离滑动</div><div class="sub">越过长滑距离触发第二套动作</div></div>
+              <div class="sw on"></div>
+            </div>
+            <div class="row" style="padding-bottom:4px">
+              <div class="t">长滑按住时长</div><div class="grow"></div><div class="val">400ms</div>
+            </div>
+            <div class="slider"><div class="track"><div class="fill" style="width:33%"></div>
+              <div class="thumb grab" style="left:33%"></div></div></div>
+          </div>
+
+          <div class="secLabel">反馈</div>
+          <div class="card">
+            <div class="row">
+              <div class="col"><div class="t">震动反馈</div><div class="sub">触发动作时轻微震动</div></div>
+              <div class="sw on"></div>
+            </div>
+            <div class="row">
+              <div class="col"><div class="t">快速振动</div><div class="sub">识别手势瞬间振动</div></div>
+              <div class="sw"></div>
+            </div>
+          </div>
+
+          <div class="secLabel">外观</div>
+          <div class="card">
+            <div class="row">
+              <div class="col"><div class="t">指示颜色</div><div class="sub">手势进行中的高亮色</div></div>
+              <div class="val" style="display:flex;align-items:center;gap:8px">
+                蓝 <span style="width:16px;height:16px;border-radius:5px;background:#428AF7;display:inline-block"></span></div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+            <div class="row">
+              <div class="col"><div class="t">手柄颜色</div><div class="sub">静态指示条颜色</div></div>
+              <div class="val" style="display:flex;align-items:center;gap:8px">
+                白 <span style="width:16px;height:16px;border-radius:5px;background:#FFFFFF;display:inline-block"></span></div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b>① 主界面 · 深色</b>　分组卡片 + 大圆角 24dp + 单一强调色</div>
+    </div>
+
+    <!-- ========== ② 主界面 · 浅色 ========== -->
+    <div class="fcol">
+      <div class="frame light fade">
+        <div class="statusbar"><span>09:41</span><span>5G · 86%</span></div>
+        <div class="page">
+          <div class="h1">OneHand+</div>
+
+          <div class="card">
+            <div class="row">
+              <div class="col"><div class="t">手势服务</div><div class="sub accent">运行中 · 左 / 右手柄已就绪</div></div>
+              <div class="val accent" style="font-weight:600">已开启</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+          </div>
+
+          <div class="secLabel">手柄</div>
+          <div class="card">
+            <div class="row">
+              <div class="col"><div class="t">左手柄</div><div class="sub">1 个 · 长度 70% · 居中</div></div>
+              <div class="sw on"></div>
+            </div>
+            <div class="row">
+              <div class="col"><div class="t">右手柄</div><div class="sub">1 个 · 长度 70% · 居中</div></div>
+              <div class="sw on"></div>
+            </div>
+            <div class="row">
+              <div class="col"><div class="t accent" style="font-weight:600">添加手柄</div>
+                   <div class="sub">每侧最多 3 个，各自独立映射</div></div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+          </div>
+
+          <div class="secLabel">手势</div>
+          <div class="card">
+            <div class="row" style="padding-bottom:4px">
+              <div class="t">短滑触发距离</div><div class="grow"></div><div class="val">28dp</div>
+            </div>
+            <div class="slider"><div class="track"><div class="fill" style="width:30%"></div>
+              <div class="thumb" style="left:30%"></div></div></div>
+            <div class="row" style="padding-bottom:4px;border-top:1px solid var(--divider)">
+              <div class="t">手势角度</div><div class="grow"></div><div class="val">28°</div>
+            </div>
+            <div class="slider"><div class="track"><div class="fill" style="width:42%"></div>
+              <div class="thumb" style="left:42%"></div></div></div>
+            <div class="row">
+              <div class="col"><div class="t">长距离滑动</div><div class="sub">越过长滑距离触发第二套动作</div></div>
+              <div class="sw on"></div>
+            </div>
+            <div class="row" style="padding-bottom:4px;border-top:1px solid var(--divider)">
+              <div class="t">长滑按住时长</div><div class="grow"></div><div class="val">400ms</div>
+            </div>
+            <div class="slider"><div class="track"><div class="fill" style="width:33%"></div>
+              <div class="thumb" style="left:33%"></div></div></div>
+          </div>
+
+          <div class="secLabel">反馈</div>
+          <div class="card">
+            <div class="row">
+              <div class="col"><div class="t">震动反馈</div><div class="sub">触发动作时轻微震动</div></div>
+              <div class="sw on"></div>
+            </div>
+            <div class="row">
+              <div class="col"><div class="t">快速振动</div><div class="sub">识别手势瞬间振动</div></div>
+              <div class="sw"></div>
+            </div>
+          </div>
+
+          <div class="secLabel">外观</div>
+          <div class="card">
+            <div class="row">
+              <div class="col"><div class="t">指示颜色</div><div class="sub">手势进行中的高亮色</div></div>
+              <div class="val" style="display:flex;align-items:center;gap:8px">
+                蓝 <span style="width:16px;height:16px;border-radius:5px;background:#377EF7;display:inline-block"></span></div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+            <div class="row">
+              <div class="col"><div class="t">手柄颜色</div><div class="sub">静态指示条颜色</div></div>
+              <div class="val" style="display:flex;align-items:center;gap:8px">
+                白 <span style="width:16px;height:16px;border-radius:5px;background:#FFFFFF;display:inline-block"></span></div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b>② 主界面 · 浅色</b>　同一套组件与层级，仅令牌切换</div>
+    </div>
+
+    <!-- ========== ③ 手柄编辑 · 深色 ========== -->
+    <div class="fcol">
+      <div class="frame dark fade">
+        <div class="statusbar"><span>23:25</span><span>5G · 55%</span></div>
+        <div class="page">
+          <div class="navbar">
+            <div class="back">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ECECEC" stroke-width="2.2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            </div>
+            <div class="title">左手柄</div>
+          </div>
+
+          <div class="preview" style="margin-top:12px">
+            <div class="edge"></div><div class="bar"></div>
+            <div class="hint-a">手势＝从这里向内滑</div>
+            <div class="arrows">
+              <div class="arr" style="top:38px;right:8px">↘ 下滑</div>
+              <div class="arr" style="top:66px;right:8px">→ 内滑</div>
+              <div class="arr" style="top:94px;right:8px">↗ 上滑</div>
+            </div>
+          </div>
+
+          <div class="secLabel">手柄尺寸</div>
+          <div class="card">
+            <div class="row" style="padding-bottom:2px">
+              <div class="t">距屏幕边缘</div><div class="grow"></div><div class="val">26dp</div>
+            </div>
+            <div style="font-size:12px;color:var(--sec);margin:0 0 4px">避开系统返回手势区（ColorOS 上实测约 24dp）</div>
+            <div class="slider"><div class="track"><div class="fill" style="width:46%"></div>
+              <div class="thumb" style="left:46%"></div></div></div>
+            <div class="row" style="padding-bottom:4px;border-top:1px solid var(--divider)">
+              <div class="t">长度</div><div class="grow"></div><div class="val">70%</div>
+            </div>
+            <div class="slider"><div class="track"><div class="fill" style="width:70%"></div>
+              <div class="thumb" style="left:70%"></div></div></div>
+            <div class="row" style="padding-bottom:4px;border-top:1px solid var(--divider)">
+              <div class="t">位置</div><div class="grow"></div><div class="val">居中</div>
+            </div>
+            <div class="slider"><div class="track"><div class="fill" style="width:50%"></div>
+              <div class="thumb" style="left:50%"></div></div></div>
+          </div>
+
+          <div class="secLabel">短距离滑动</div>
+          <div class="card">
+            <div class="row"><div class="t">向内滑动</div><div class="grow"></div><div class="val">返回</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="row"><div class="t">向上滑动</div><div class="grow"></div><div class="val">主屏幕</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="row"><div class="t">向下滑动</div><div class="grow"></div><div class="val">最近任务</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+          </div>
+
+          <div class="secLabel">长距离滑动</div>
+          <div class="card">
+            <div class="row"><div class="t">向内滑动</div><div class="grow"></div><div class="val">无</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="row"><div class="t">向上滑动</div><div class="grow"></div><div class="val">无</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="row"><div class="t">向下滑动</div><div class="grow"></div><div class="val">无</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+          </div>
+
+          <div class="secLabel">滑动保持（滑入后停住）</div>
+          <div class="card">
+            <div class="row"><div class="t">向内滑动</div><div class="grow"></div><div class="val">通知面板</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="row"><div class="t">向上滑动</div><div class="grow"></div><div class="val">无</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b>③ 手柄编辑 · 深色</b>　顶部迷你示意 + 槽位清单</div>
+    </div>
+
+    <!-- ========== ④ 操作选择 · 深色 ========== -->
+    <div class="fcol">
+      <div class="frame dark">
+        <div class="statusbar"><span>23:25</span><span>5G · 55%</span></div>
+        <div class="page">
+          <div class="navbar">
+            <div class="back">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ECECEC" stroke-width="2.2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            </div>
+            <div class="title">左手柄</div>
+          </div>
+          <div class="secLabel">短距离滑动</div>
+          <div class="card">
+            <div class="row"><div class="t">向内滑动</div><div class="grow"></div><div class="val">返回</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="row"><div class="t">向上滑动</div><div class="grow"></div><div class="val">主屏幕</div>
+              <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+          </div>
+        </div>
+        <div class="dim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="sheetTitle">选择操作 <span class="sub">· 向内滑动</span></div>
+          <div class="row"><div class="t">无</div><div class="grow"></div><div class="radio"></div></div>
+          <div class="row"><div class="t">返回</div><div class="grow"></div><div class="radio on"></div></div>
+          <div class="row"><div class="t">主屏幕</div><div class="grow"></div><div class="radio"></div></div>
+          <div class="row"><div class="t">最近任务</div><div class="grow"></div><div class="radio"></div></div>
+          <div class="row"><div class="t">通知面板</div><div class="grow"></div><div class="radio"></div></div>
+          <div class="row"><div class="t">快捷设置</div><div class="grow"></div><div class="radio"></div></div>
+          <div class="row"><div class="t">截图</div><div class="grow"></div><div class="radio"></div></div>
+          <div class="row"><div class="t accent" style="font-weight:600">打开应用…</div><div class="grow"></div>
+            <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+        </div>
+      </div>
+      <div class="cap"><b>④ 操作选择 · 深色</b>　底部圆角弹层 + 勾选，列表可滚动</div>
+    </div>
+
+    <!-- ========== ⑤ 浮层组件 · 深色 ========== -->
+    <div class="fcol">
+      <div class="frame dark" style="background:#050506">
+        <div class="statusbar"><span>23:25</span><span>5G · 55%</span></div>
+        <div class="demo" style="top:78px">
+          <div class="panelDark">
+            <div class="pad"><div class="cursor"></div></div>
+            <div style="display:flex;justify-content:space-between;padding:0 14px 12px;font-size:12px;color:#8b8b90">
+              <span>虚拟触控板 · 供大屏“够不到”时使用</span><span class="accent">点按可单击</span>
+            </div>
+          </div>
+        </div>
+        <div class="demo" style="top:322px">
+          <div class="capsule">
+            <div class="cirbtn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ECECEC" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></div>
+            <div class="cirbtn">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#ECECEC" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7.5"/></svg></div>
+            <div class="cirbtn">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#ECECEC" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg></div>
+          </div>
+          <div style="text-align:center;font-size:12px;color:#8b8b90;margin-top:10px">浮动导航按钮 · 可拖动</div>
+        </div>
+        <div class="demo" style="top:472px">
+          <div class="panelDark">
+            <div class="grid3">
+              <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d9d9dc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>返回</div>
+              <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d9d9dc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7.5"/></svg>主屏</div>
+              <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d9d9dc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v10H4z"/><circle cx="12" cy="12.5" r="3"/></svg>截图</div>
+              <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d9d9dc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 3.5h6.8l1 3.5H7.6z"/><rect x="9.7" y="7" width="4.6" height="11.5" rx="2.3"/></svg>手电筒</div>
+              <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d9d9dc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 14-5.3"/><path d="M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v4h-4"/><path d="M6 21v-4h4"/></svg>旋转</div>
+              <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d9d9dc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>锁屏</div>
+            </div>
+          </div>
+        </div>
+        <div class="handleStrip hs-idle" style="top:120px;bottom:auto;height:200px"></div>
+        <div class="handleStrip hs-active" style="top:340px;bottom:auto;height:120px;left:6px"></div>
+        <div class="handleStrip hs-thresh" style="top:480px;bottom:auto;height:80px"></div>
+        <div style="position:absolute;left:22px;top:108px;font-size:11px;color:#8b8b90">指示条 · 空闲</div>
+        <div style="position:absolute;left:22px;top:328px;font-size:11px;color:#8b8b90">拖动中 · 强调色</div>
+        <div style="position:absolute;left:22px;top:466px;font-size:11px;color:#8b8b90">越过长滑阈值 · 光晕 + 轻震</div>
+      </div>
+      <div class="cap"><b>⑤ 浮层组件 · 深色</b>　全部大圆角 + 半透明深底，不堆阴影</div>
+    </div>
+
+  </div>
+
+  <!-- ========== 设计自查 ========== -->
+  <div class="audit">
+    <h2>设计自查（impeccable × taste-skill）</h2>
+    <table>
+      <tr><td>Apple 式精修（Boss 反馈）</td><td class="ok">✅ 大标题/负字距排版、勾选式选择、chevron 1.9px/38%、开关 50×30、滑块 27dp 白钮、弹层阻尼弹簧；ColorOS 采样令牌与结构保留</td></tr>
+      <tr><td>单一强调色（taste 硬规则）</td><td class="ok">✅ 2 个蓝（#428AF7 深 / #377EF7 浅）为同一强调在两种主题下的实测取值，其余全部中性色</td></tr>
+      <tr><td>禁用项（渐变文字 / 玻璃拟态默认 / 侧边条纹 / 卡片模板阵列）</td><td class="ok">✅ 无渐变、无毛玻璃默认、无徽章条纹；卡片按功能分组而非等宽阵列</td></tr>
+      <tr><td>对比度（正文 ≥4.5:1）</td><td class="ok">✅ 深色 #ECECEC/#1A1A1A ≈ 12.6:1；次要 #959595 ≈ 6.3:1；浅色 #181818/#FEFEFE ≈ 17.1:1；次要 #737373 ≈ 4.7:1</td></tr>
+      <tr><td>提示文字也不低于 4.5:1</td><td class="ok">✅ 副标题用 #959595/#737373 而非浅灰占位色</td></tr>
+      <tr><td>触摸目标 ≥48dp</td><td class="ok">✅ 行高 58dp、开关实际热区 ≥48dp、滑块圆钮 22dp（按压缩放 26dp）</td></tr>
+      <tr><td>动效：意图明确、缓出、无弹跳滥用</td><td class="ok">✅ 全部 ease-out/强调曲线，250ms 上下；无循环微动效、无入场错峰滥用（仅 ≤120ms 轻微错峰）</td></tr>
+      <tr><td>reduce-motion / 移除动画</td><td class="ok">✅ 遵循系统“移除动画”设置（v0.5 实现项，已在动效规范中列明）</td></tr>
+      <tr><td>深色主题是一等公民（impeccable）</td><td class="ok">✅ 令牌级双主题（非反色），采样自系统</td></tr>
+      <tr><td>ColorOS 特有语言（目标设备一致性）</td><td class="ok">✅ 大圆角 24dp 卡片、白钮胶囊开关、#E0E0E0/#3A3A3C 关态、圆形返回钮、底部大圆角弹层、分组标题在卡片外</td></tr>
+      <tr><td>图标策略</td><td class="dev">⚠️ 有意偏离：ColorOS 首页用彩色图标，但子页面（如“无障碍”）为纯文字列表；本应用采用“文字列表 + 强调色少量点缀”，减少杂色、贴近工具属性</td></tr>
+      <tr><td>动效强度 vs 设置类应用基线</td><td class="dev">⚠️ 有意偏离：MOTION 由基线 2-3 上调至 4——手势工具的产品核心即“动的艺术”，且用户明确要求优雅动效；仍坚持无弹跳、无装饰性循环</td></tr>
+      <tr><td>与系统手势共存（本项目特有）</td><td class="ok">✅ 手柄默认内移避开 ColorOS 返回手势区（24dp，真机实测）；设置中可调</td></tr>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>
