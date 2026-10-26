@@ -4,19 +4,19 @@
 
 **屏幕边缘的手势工作台**
 
-<sub>Android 8.0+ · 无障碍浮层 · 无网络权限 · Apache-2.0</sub>
+<sub>Android 8.0+ · 无障碍浮层 · 全部本地运行 · 无网络权限</sub>
 
-[![Release](https://img.shields.io/github/v/release/Buildlee/oneHandX?style=flat-square&labelColor=3f3f46&color=71717a&label=release)](https://github.com/Buildlee/oneHandX/releases/latest)&nbsp;&nbsp;[![License](https://img.shields.io/badge/license-Apache--2.0-71717a?style=flat-square&labelColor=3f3f46)](LICENSE)&nbsp;&nbsp;[![Platform](https://img.shields.io/badge/Android-8.0%2B-71717a?style=flat-square&labelColor=3f3f46)](https://developer.android.com)
+[![Download APK](https://img.shields.io/badge/download-APK-18181b?style=flat-square&logo=android&logoColor=ffffff)](https://github.com/Buildlee/oneHandX/releases/latest)&nbsp;&nbsp;[![Release](https://img.shields.io/github/v/release/Buildlee/oneHandX?style=flat-square&label=release&labelColor=f4f4f5&color=e4e4e7)](https://github.com/Buildlee/oneHandX/releases)&nbsp;&nbsp;[![License](https://img.shields.io/badge/license-Apache--2.0-e4e4e7?style=flat-square&labelColor=f4f4f5)](LICENSE)
 
-**[下载最新版本](https://github.com/Buildlee/oneHandX/releases/latest)**&nbsp; · &nbsp;[手势与动作](#手势与动作)&nbsp; · &nbsp;[从源码构建](#从源码构建)&nbsp; · &nbsp;[文档](docs/README.md)
+[手势与动作](#手势与动作)&nbsp; · &nbsp;[从源码构建](#从源码构建)&nbsp; · &nbsp;[文档](docs/README.md)
 
 </div>
 
 <p align="center">
-  <img src="docs/images/v05-montage.png" width="780" alt="OneHandX：主界面深色与浅色、手柄编辑、动作选择弹层">
+  <img src="docs/images/v051-montage.png" width="760" alt="OneHandX 界面：主界面深色、主界面浅色、手柄编辑、动作选择">
+  <br><br>
+  <sub>主界面（深色）· 主界面（浅色）· 手柄编辑 · 动作选择</sub>
 </p>
-
-<p align="center"><sub>主界面（深色 / 浅色） · 手柄编辑 · 动作选择</sub></p>
 
 ## 这是什么
 
@@ -34,15 +34,16 @@ OneHandX 把屏幕左右边缘变成可编程的手势区：从边缘向内滑�
 
 ## 快速开始
 
-1. 从 [Releases](https://github.com/Buildlee/oneHandX/releases/latest) 下载最新 APK（debug 签名，可直接安装），或[从源码构建](#从源码构建)。
-2. 打开应用，按提示开启无障碍服务「OneHandX 手势服务」。
+1. 从 [Releases](https://github.com/Buildlee/oneHandX/releases/latest) 下载最新 APK（debug 签名）。
+2. 安装后打开应用，按提示开启无障碍服务「OneHandX 手势服务」。
 3. 从屏幕左右边缘向内滑动，先试用默认映射；位置、边距、槽位映射都在应用内调整。
+4. 自行编译见[从源码构建](#从源码构建)。
 
 > 覆盖安装会解绑无障碍服务，更新后需要重新开启一次。应用不申请网络权限。
 
 ## 主要能力
 
-- **手势槽位**：每个手柄 10 个。短滑、长滑、滑动保持（滑入后停住，时长可调）三个长度 × 直滑、斜上、斜下三个方向，另加一个长按（原地按住）。
+- **手势槽位**：每个手柄 10 个。短滑、长滑、滑动保持（滑入后停住）三个长度 × 直滑、斜上、斜下三个方向，另加一个长按。
 - **多手柄**：左右各最多 3 个，长度、垂直位置、不透明度、边距独立设置；「对齐触钮」可左右同步。
 - **动作库**：35 个动作。返回、主屏、最近任务、上一应用、通知面板、快捷设置、截图、锁屏、电源菜单、手电筒、音量 ±、音量面板、静音、媒体控制、屏幕超时、旋转、导航栏切换、颜色反转、搜索、打开应用、语音助手、虚拟触控板、浮动导航等。
 - **浮窗工具**：快速工具（亮度条加自定义按钮）、快速启动器、任务切换器、虚拟触控板（移动 / 点击 / 长按）、浮动导航按钮。
