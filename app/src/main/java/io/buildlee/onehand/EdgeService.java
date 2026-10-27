@@ -3,7 +3,9 @@ package io.buildlee.onehand;
 import android.accessibilityservice.AccessibilityService;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.BroadcastReceiver;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -52,10 +54,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import io.buildlee.onehand.takeover.TakeoverManager;
+
 /**
  * 边缘手势服务：多手柄管理 + 6 种手势 × 每手柄映射 + 动作执行 + 快速面板。
  */
-public class EdgeService extends AccessibilityService {
+public class EdgeService extends AccessibilityService implements TakeoverManager.Host {
 
     private static final String TAG = "OneHand";
     private static final long HIDE_DURATION_MS = 30000;
@@ -86,6 +90,24 @@ public class EdgeService extends AccessibilityService {
     private boolean isHome = false;
     private int imeTop = 0;
     private boolean quickVibed = false;
+    private static volatile EdgeService connectedService;
+    private TakeoverManager takeover;
+    private boolean takeoverWindows;
+    private volatile boolean takeoverWindowsReady;
+    private String calibratedGeometry = "";
+    private View leftRouter, rightRouter;
+    private boolean screenReceiverRegistered;
+    private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (takeover == null) return;
+            if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction()) && takeover.status() != TakeoverManager.Status.IDLE)
+                takeover.pauseForScene();
+            else if (Intent.ACTION_SCREEN_ON.equals(intent.getAction()) || Intent.ACTION_USER_PRESENT.equals(intent.getAction()))
+                takeover.sceneMayHaveChanged();
+        }
+    };
+
+    public static EdgeService connectedService() { return connectedService; }
 
     private final Runnable restorePkg = () -> {
         currentPkg = "";
@@ -124,10 +146,14 @@ public class EdgeService extends AccessibilityService {
                 || key.startsWith("wave_")
                 || Prefs.HANDLE_COLOR.equals(key)
                 || Prefs.EXCLUDED_APPS.equals(key)) {
-            main.post(this::refreshHandles);
+            main.post(() -> {
+                if (takeover != null && takeover.isPausingScene()) takeover.stop();
+                refreshHandles();
+            });
         }
         if (Prefs.PAUSE_KEYBOARD.equals(key) || Prefs.KEYBOARD_MODE.equals(key)) {
             main.post(() -> {
+                if (takeover != null && takeover.isPausingScene()) takeover.stop();
                 updateImeState();
                 refreshHandles();
             });
@@ -136,7 +162,10 @@ public class EdgeService extends AccessibilityService {
             main.post(this::applyVisibility);
         }
         if (Prefs.HIDE_NAVBAR.equals(key)) {
-            main.post(this::syncNavbar);
+            main.post(() -> {
+                if (takeover != null && (takeoverWindows || takeover.isPausingScene())) takeover.stop();
+                else syncNavbar();
+            });
         }
     };
 
@@ -145,6 +174,14 @@ public class EdgeService extends AccessibilityService {
         super.onServiceConnected();
         prefs = new Prefs(this);
         wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        takeover = TakeoverManager.get(this);
+        connectedService = this;
+        IntentFilter screenFilter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
+        screenFilter.addAction(Intent.ACTION_SCREEN_ON);
+        screenFilter.addAction(Intent.ACTION_USER_PRESENT);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, screenFilter, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(screenReceiver, screenFilter);
+        screenReceiverRegistered = true;
         prefs.registerListener(prefListener);
         try {
             Intent home = new Intent(Intent.ACTION_MAIN);
@@ -161,6 +198,9 @@ public class EdgeService extends AccessibilityService {
     @Override
     public void onDestroy() {
         Log.i(TAG, "service destroy");
+        if (connectedService == this) connectedService = null;
+        if (takeover != null && takeover.status() != TakeoverManager.Status.IDLE) takeover.stop();
+        if (screenReceiverRegistered) { unregisterReceiver(screenReceiver); screenReceiverRegistered = false; }
         if (torchOn && torchId != null) {
             try {
                 CameraManager cm = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
@@ -181,6 +221,9 @@ public class EdgeService extends AccessibilityService {
     @Override
     public boolean onUnbind(Intent intent) {
         Log.i(TAG, "service unbind");
+        if (connectedService == this) connectedService = null;
+        if (takeover != null && takeover.status() != TakeoverManager.Status.IDLE) takeover.stop();
+        if (screenReceiverRegistered) { unregisterReceiver(screenReceiver); screenReceiverRegistered = false; }
         if (prefs != null) {
             try { prefs.unregisterListener(prefListener); } catch (Exception ignored) {}
         }
@@ -202,7 +245,13 @@ public class EdgeService extends AccessibilityService {
         CharSequence p = event.getPackageName();
         if (p == null) return;
         String pkg = p.toString();
-        if (pkg.equals(getPackageName())) return;
+        if (pkg.equals(getPackageName())) {
+            isHome = false;
+            currentPkg = "";
+            main.removeCallbacks(restorePkg);
+            main.post(this::applyVisibility);
+            return;
+        }
         if (!homePkg.isEmpty() && homePkg.equals(pkg)) {
             if (!isHome) {
                 isHome = true;
@@ -238,9 +287,14 @@ public class EdgeService extends AccessibilityService {
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         main.post(() -> {
+            if (takeoverWindows && takeover != null && newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                takeover.pauseForScene();
+                return;
+            }
             dismissPanel();
             maybeUpdateIme();
             refreshHandles();
+            if (takeover != null) takeover.sceneMayHaveChanged();
         });
     }
 
@@ -248,6 +302,10 @@ public class EdgeService extends AccessibilityService {
 
     private void refreshHandles() {
         if (wm == null || prefs == null) return;
+        if (takeoverWindows && takeover != null && takeover.status() != TakeoverManager.Status.IDLE) {
+            if (!takeover.isPausingScene()) takeover.stop();
+            return;
+        }
         detachAll();
         if (prefs.masterEnabled()) {
             for (String side : Prefs.SIDES) {
@@ -264,6 +322,14 @@ public class EdgeService extends AccessibilityService {
 
     private void detachAll() {
         if (wm == null) return;
+        takeoverWindowsReady = false;
+        for (View router : new View[]{leftRouter, rightRouter}) {
+            if (router != null) {
+                if (router.getTag() instanceof RouterTouch) ((RouterTouch) router.getTag()).cancel();
+                try { wm.removeViewImmediate(router); } catch (Exception ignored) { }
+            }
+        }
+        leftRouter = rightRouter = null;
         if (feedback != null) {
             feedback.clear();
             try { wm.removeViewImmediate(feedback); } catch (Exception ignored) {}
@@ -291,8 +357,9 @@ public class EdgeService extends AccessibilityService {
             catch (Exception e) { Log.w(TAG, "feedback overlay unavailable", e); return; }
         }
         feedback.getLocationOnScreen(feedbackLocation);
-        float edge = left ? Du.dp(this, prefs.handleMarginDp())
-                : Du.screenSize(this).x - Du.dp(this, prefs.handleMarginDp());
+        int margin = takeoverWindows ? 0 : prefs.handleMarginDp();
+        float edge = left ? Du.dp(this, margin)
+                : Du.screenSize(this).x - Du.dp(this, margin);
         feedback.show(left, edge - feedbackLocation[0], y - feedbackLocation[1], inward, dy);
     }
 
@@ -301,7 +368,7 @@ public class EdgeService extends AccessibilityService {
         Point size = Du.screenSize(this);
         int widthPx = Du.dp(this, prefs.handleWidthDp());
         int heightPx = Math.round(size.y * prefs.handleLen(id) / 100f);
-        int margin = Du.dp(this, prefs.handleMarginDp());
+        int margin = takeoverWindows ? 0 : Du.dp(this, prefs.handleMarginDp());
         int usableBottom = size.y;
         if (imeVisible && Prefs.KB_ABOVE.equals(prefs.keyboardMode()) && imeTop > 0) {
             usableBottom = Math.max(Du.dp(this, 240), imeTop);
@@ -317,6 +384,7 @@ public class EdgeService extends AccessibilityService {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | (left ? Gravity.LEFT : Gravity.RIGHT);
+        if (takeoverWindows) lp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         lp.x = margin;
         lp.y = Math.max(0, Math.round((usableBottom - heightPx) * prefs.handlePos(id) / 100f));
         float rr = Motion.maxRefreshRate(this);
@@ -340,6 +408,172 @@ public class EdgeService extends AccessibilityService {
         Log.i(TAG, "handle attached id=" + id + " " + widthPx + "x" + heightPx + " y=" + lp.y);
     }
 
+    @Override public boolean prepareTakeoverWindows() {
+        if (connectedService != this || prefs == null || wm == null || !prefs.masterEnabled()
+                || !prefs.sideEnabled("L") || !prefs.sideEnabled("R") || tempHidden
+                || homeBlocked() || prefs.isExcluded(currentPkg)
+                || getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) return false;
+        String geometry = takeoverGeometry();
+        if (takeover != null && takeover.reusingCalibration()) {
+            if (!geometry.equals(calibratedGeometry)) return false;
+        } else calibratedGeometry = geometry;
+        takeoverWindows = true;
+        updateImeState();
+        if (imeVisible) { takeoverWindows = false; return false; }
+        detachAll();
+        for (String side : Prefs.SIDES) {
+            for (int i = 1; i <= prefs.handleCount(side); i++) {
+                String id = Prefs.handleId(side, i);
+                if (prefs.handleEnabled(id)) attachHandle(id);
+            }
+        }
+        boolean hasLeft = false, hasRight = false;
+        for (String id : handleViews.keySet()) {
+            if (id.startsWith("L")) hasLeft = true;
+            if (id.startsWith("R")) hasRight = true;
+        }
+        if (hasLeft && hasRight) {
+            leftRouter = attachRouter(true);
+            rightRouter = attachRouter(false);
+        }
+        takeoverWindowsReady = leftRouter != null && rightRouter != null;
+        if (!takeoverWindowsReady) finishTakeoverWindows();
+        return takeoverWindowsReady;
+    }
+
+    @Override public boolean takeoverWindowsHealthy() {
+        android.os.PowerManager power = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        android.app.KeyguardManager keyguard = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        int navigation = navigationMode();
+        return connectedService == this && takeoverWindowsReady && (navigation < 0 || navigation == 2)
+                && power != null && power.isInteractive()
+                && keyguard != null && !keyguard.isKeyguardLocked();
+    }
+
+    @Override public boolean sceneTemporarilyBlocked() {
+        android.os.PowerManager power = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        android.app.KeyguardManager keyguard = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        return power == null || !power.isInteractive() || keyguard == null || keyguard.isKeyguardLocked()
+                || imeVisible || tempHidden || homeBlocked() || (prefs != null && prefs.isExcluded(currentPkg))
+                || getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+    }
+
+    @Override public boolean canResumeTakeover() {
+        if (connectedService != this || prefs == null || wm == null || !prefs.masterEnabled()
+                || !prefs.sideEnabled("L") || !prefs.sideEnabled("R") || imeVisible || tempHidden
+                || homeBlocked() || prefs.isExcluded(currentPkg) || prefs.hideNavbar() || NavbarHelper.isHidden(this)
+                || getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) return false;
+        if (!takeoverGeometry().equals(calibratedGeometry)) return false;
+        int navigation = navigationMode();
+        if (navigation >= 0 && navigation != 2) return false;
+        android.os.PowerManager power = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        android.app.KeyguardManager keyguard = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        if (power == null || !power.isInteractive() || keyguard == null || keyguard.isKeyguardLocked()) return false;
+        if (Build.VERSION.SDK_INT < 30) return false;
+        try {
+            android.graphics.Insets insets = wm.getCurrentWindowMetrics().getWindowInsets()
+                    .getInsets(android.view.WindowInsets.Type.systemGestures());
+            return insets.left > 0 && insets.right > 0;
+        } catch (RuntimeException e) { return false; }
+    }
+
+    private String takeoverGeometry() {
+        Point size = Du.screenSize(this);
+        return size.x + "x" + size.y + ":" + getResources().getDisplayMetrics().densityDpi
+                + ":" + wm.getDefaultDisplay().getRotation() + ":" + navigationMode();
+    }
+
+    private int navigationMode() {
+        try {
+            int id = getResources().getIdentifier("config_navBarInteractionMode", "integer", "android");
+            return id == 0 ? -1 : getResources().getInteger(id);
+        } catch (RuntimeException e) { return -1; }
+    }
+
+    @Override public void finishTakeoverWindows() {
+        takeoverWindows = false;
+        detachAll();
+        if (connectedService == this) { refreshHandles(); syncNavbar(); }
+    }
+
+    private View attachRouter(boolean left) {
+        Point size = Du.screenSize(this);
+        int top = Du.dp(this, 24), bottom = Du.dp(this, 24);
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                android.view.WindowInsets insets = wm.getCurrentWindowMetrics().getWindowInsets();
+                top = Math.max(top, insets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.statusBars()).top);
+                bottom = Math.max(bottom, insets.getInsets(android.view.WindowInsets.Type.mandatorySystemGestures()).bottom);
+            } catch (RuntimeException e) { Log.w(TAG, "gesture insets unavailable", e); return null; }
+        }
+        int height = size.y - top - bottom;
+        if (height <= Du.dp(this, 120)) return null;
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                Du.dp(this, prefs.handleWidthDp()), height, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | (left ? Gravity.LEFT : Gravity.RIGHT);
+        lp.y = top;
+        View view = new View(this);
+        RouterTouch touch = new RouterTouch(left);
+        view.setTag(touch);
+        view.setOnTouchListener(touch);
+        try { wm.addView(view, lp); return view; }
+        catch (RuntimeException e) { Log.w(TAG, "takeover input window unavailable", e); return null; }
+    }
+
+    private final class RouterTouch implements View.OnTouchListener {
+        private final boolean left;
+        private HandleTouch delegate;
+        private View handle;
+        private float startX, startY, lastX, lastY, maxInward;
+        RouterTouch(boolean left) { this.left = left; }
+        void cancel() { if (delegate != null) delegate.cancel(); delegate = null; handle = null; }
+        @Override public boolean onTouch(View view, MotionEvent event) {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                cancel();
+                startX = lastX = event.getRawX(); startY = lastY = event.getRawY(); maxInward = 0;
+                String side = left ? "L" : "R";
+                for (int i = 1; i <= prefs.handleCount(side); i++) {
+                    View candidate = handleViews.get(Prefs.handleId(side, i));
+                    if (candidate == null || candidate.getVisibility() != View.VISIBLE) continue;
+                    int[] location = new int[2]; candidate.getLocationOnScreen(location);
+                    if (startY >= location[1] && startY < location[1] + candidate.getHeight()) {
+                        handle = candidate; delegate = (HandleTouch) candidate.getTag(); break;
+                    }
+                }
+            }
+            if (delegate != null) return delegate.onTouch(handle, event);
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN: return true;
+                case MotionEvent.ACTION_MOVE:
+                    lastX = event.getRawX(); lastY = event.getRawY();
+                    float inward = left ? lastX - startX : startX - lastX;
+                    maxInward = Math.max(maxInward, inward);
+                    showFeedback(left, startY, inward, lastY - startY);
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    if (feedback != null) feedback.dismiss();
+                    float finalInward = left ? lastX - startX : startX - lastX;
+                    if (maxInward >= shortPx() && finalInward >= shortPx() * .6f) dispatchTakeoverBack(left);
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    if (feedback != null) feedback.dismiss();
+                    return true;
+                default: return true;
+            }
+        }
+    }
+
+    private void dispatchTakeoverBack(boolean left) {
+        if (takeover == null) return;
+        boolean trial = takeover.status() == TakeoverManager.Status.TRIAL;
+        if (trial) takeover.expectCalibrationBack(left);
+        boolean ok = performGlobalAction(GLOBAL_ACTION_BACK);
+        Log.i(TAG, "takeover fallback side=" + (left ? "L" : "R") + " ok=" + ok);
+        if (!ok) { takeover.cancelCalibrationBack(); takeover.stop(); }
+    }
+
     private void applyVisibility() {
         if (prefs == null) return;
         boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
@@ -349,6 +583,11 @@ public class EdgeService extends AccessibilityService {
                 && !imeBlocked()
                 && !homeBlocked()
                 && !prefs.isExcluded(currentPkg);
+        if (takeoverWindows && !env && takeover != null) {
+            if (!prefs.masterEnabled() || !prefs.sideEnabled("L") || !prefs.sideEnabled("R")) takeover.stop();
+            else takeover.pauseForScene();
+        }
+        if (env && takeover != null && takeover.isPausedForScene()) takeover.sceneMayHaveChanged();
         for (View v : handleViews.values()) {
             setVis(v, env);
         }
@@ -457,7 +696,8 @@ public class EdgeService extends AccessibilityService {
                     lastMoveTime = System.currentTimeMillis();
                     main.removeCallbacks(pressHoldTask);
                     main.removeCallbacks(holdCheckTask);
-                    main.postDelayed(pressHoldTask, PRESS_HOLD_MS);
+                    if (takeover == null || takeover.status() != TakeoverManager.Status.TRIAL)
+                        main.postDelayed(pressHoldTask, PRESS_HOLD_MS);
                     if (v instanceof EdgeHandleView) ((EdgeHandleView) v).setActive(true);
                     return true;
                 }
@@ -471,6 +711,7 @@ public class EdgeService extends AccessibilityService {
                     if (maxInward > slop || Math.hypot(lastX - downX, lastY - downY) > slop * 2f) {
                         main.removeCallbacks(pressHoldTask);
                     }
+                    if (takeover != null && takeover.status() == TakeoverManager.Status.TRIAL) return true;
                     // 快速振动：越过触发距离立即振一次（对齐 OHO+「快速振动」）
                     if (!quickVibed && maxInward >= shortPx() && prefs.vibrate() && prefs.quickVibrate()) {
                         quickVibed = true;
@@ -538,7 +779,7 @@ public class EdgeService extends AccessibilityService {
 
     private void commit(String handleId, boolean leftSide, float dxRaw, float dy, float maxInward, long longHeldMs) {
         float dx = leftSide ? dxRaw : -dxRaw;
-        if (dx <= 0 || maxInward < shortPx() * 0.6f) {
+        if (dx <= 0 || maxInward < shortPx() * 0.6f || (takeoverWindows && dx < shortPx() * 0.6f)) {
             Log.i(TAG, "gesture ignored id=" + handleId + " dx=" + dx + " inward=" + maxInward);
             return;
         }
@@ -552,6 +793,10 @@ public class EdgeService extends AccessibilityService {
     }
 
     private void runGesture(String handleId, String len, String dir, boolean leftSide) {
+        if (takeover != null && takeover.status() == TakeoverManager.Status.TRIAL) {
+            dispatchTakeoverBack(leftSide);
+            return;
+        }
         String slot = Prefs.slot(handleId, len, dir);
         GestureAction action = GestureAction.fromId(prefs.actionId(slot));
         if (action == GestureAction.NONE && "L".equals(len)) {
@@ -563,6 +808,7 @@ public class EdgeService extends AccessibilityService {
             return;
         }
         boolean ok = execute(action, prefs.actionPkg(slot), leftSide);
+        if (!ok && action == GestureAction.BACK && takeoverWindows && takeover != null) takeover.stop();
         boolean pendingShot = action == GestureAction.SCREENSHOT && Build.VERSION.SDK_INT >= 30 && ok;
         Log.i(TAG, "gesture slot=" + slot + " action=" + action.id + (pendingShot ? " submitted=true" : " ok=" + ok));
         if (ok && !pendingShot && prefs.vibrate() && !quickVibed) hapticOnce();
@@ -808,7 +1054,8 @@ public class EdgeService extends AccessibilityService {
     }
 
     private void maybeUpdateIme() {
-        if (prefs != null && !Prefs.KB_OFF.equals(prefs.keyboardMode())) {
+        if (prefs != null && (takeoverWindows || (takeover != null && takeover.isPausedForScene())
+                || !Prefs.KB_OFF.equals(prefs.keyboardMode()))) {
             updateImeState();
         } else if (imeVisible) {
             imeVisible = false;
@@ -820,7 +1067,8 @@ public class EdgeService extends AccessibilityService {
         boolean v = false;
         int top = 0;
         String mode = prefs != null ? prefs.keyboardMode() : Prefs.KB_OFF;
-        if (prefs != null && !Prefs.KB_OFF.equals(mode)) {
+        if (prefs != null && (takeoverWindows || (takeover != null && takeover.isPausedForScene())
+                || !Prefs.KB_OFF.equals(mode))) {
             try {
                 List<AccessibilityWindowInfo> ws = getWindows();
                 if (ws != null) {
@@ -842,6 +1090,11 @@ public class EdgeService extends AccessibilityService {
         if (v && top > 0) imeTop = top;
         if (changed) {
             Log.i(TAG, "ime visible=" + v + " top=" + imeTop + " mode=" + mode);
+            if (v && takeoverWindows && takeover != null) {
+                if (takeover.status() != TakeoverManager.Status.STARTING) takeover.pauseForScene();
+                return;
+            }
+            if (!v && takeover != null && takeover.isPausedForScene()) takeover.sceneMayHaveChanged();
             if (Prefs.KB_ABOVE.equals(mode)) {
                 main.removeCallbacks(refreshForIme);
                 main.postDelayed(refreshForIme, 250);

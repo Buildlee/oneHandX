@@ -309,6 +309,11 @@ public class MainActivity extends AppCompatActivity {
                 settings.addView(UiKit.clickRow(this, "手势识别", "距离、角度、长滑与振动", v -> navigate("手势识别")));
                 settings.addView(UiKit.clickRow(this, "使用场景", "键盘、横屏与应用例外", v -> navigate("使用场景")));
                 settings.addView(UiKit.clickRow(this, "系统手势共存", "边距调节与兼容性说明", v -> navigate("系统手势共存")));
+                if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                        && (android.os.Build.HARDWARE.contains("ranchu") || android.os.Build.HARDWARE.contains("goldfish"))) {
+                    settings.addView(UiKit.clickRow(this, "双侧接管（模拟器实验）", "校准、试用与恢复", v -> startActivity(new Intent(this, TakeoverActivity.class))));
+                }
+                settings.addView(UiKit.clickRow(this, "恢复系统手势", "检查并还原接管前的系统设置", v -> startActivity(new Intent(this, RecoveryActivity.class))));
                 settings.addView(UiKit.clickRow(this, "备份与高级设置", "导出、恢复与实验功能", v -> navigate("备份与高级设置")));
                 root.addView(settings);
                 root.addView(aboutCard());

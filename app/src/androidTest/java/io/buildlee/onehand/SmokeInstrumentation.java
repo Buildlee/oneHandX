@@ -22,11 +22,24 @@ public class SmokeInstrumentation extends Instrumentation {
     private String original;
     private int theme;
     private boolean motionMode;
+    private boolean recoveryMode;
+    private boolean shizukuMode;
+    private boolean holdGuard;
+    private boolean guardTransactions;
+    private boolean guardStress;
 
-    @Override public void onCreate(Bundle args) { super.onCreate(args); theme = Integer.parseInt(args.getString("theme", "1")); motionMode = args.getString("motion", "false").equals("true"); start(); }
+    @Override public void onCreate(Bundle args) { super.onCreate(args); theme = Integer.parseInt(args.getString("theme", "1")); motionMode = args.getString("motion", "false").equals("true"); recoveryMode = args.getString("recovery", "false").equals("true"); shizukuMode = args.getString("shizuku", "false").equals("true"); holdGuard = args.getString("holdGuard", "false").equals("true"); guardTransactions = args.getString("guardTransactions", "false").equals("true"); guardStress = args.getString("guardStress", "false").equals("true"); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            if (shizukuMode) {
+                int count = new ShizukuChecks(this, holdGuard, guardTransactions, guardStress).run();
+                result.putString("stream", "PASS: " + count + " Shizuku checks\n"); finish(Activity.RESULT_OK, result); return;
+            }
+            if (recoveryMode) {
+                int count = new RecoveryInstrumentation(this).run();
+                result.putString("stream", "PASS: " + count + " recovery checks\n"); finish(Activity.RESULT_OK, result); return;
+            }
             getUiAutomation().setRotation(android.app.UiAutomation.ROTATION_FREEZE_0);
             android.accessibilityservice.AccessibilityServiceInfo automationInfo = getUiAutomation().getServiceInfo();
             automationInfo.flags |= android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
