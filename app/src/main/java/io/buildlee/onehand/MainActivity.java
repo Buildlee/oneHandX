@@ -226,6 +226,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String summaryOf(String id) {
+        if (id.startsWith("G")) return groupSummary(Integer.parseInt(id.substring(1)));
         boolean left = id.startsWith("L");
         String s = (left ? "↗  " : "↖  ") + prefs.displayFor(Prefs.slot(id, "S", "U"))
                 + "\n" + (left ? "→  " : "←  ") + prefs.displayFor(Prefs.slot(id, "S", "H"))
@@ -424,42 +425,68 @@ public class MainActivity extends AppCompatActivity {
     private View handlesCard() {
         LinearLayout group = new LinearLayout(this);
         group.setOrientation(LinearLayout.VERTICAL);
+        final int count = prefs.groupCount();
+
+        if (Prefs.hasUndo()) {
+            LinearLayout undo = UiKit.clickRow(this, "已删除「" + Prefs.undoLabel() + "」", "点按撤销（30 秒内有效）",
+                    v -> { prefs.performUndo(); rebuildHandles(); });
+            LinearLayout ut = (LinearLayout) undo.getChildAt(0);
+            ((TextView) ut.getChildAt(0)).setTextColor(UiKit.col(this, R.color.accent));
+            group.addView(undo);
+            undo.postDelayed(() -> { Prefs.clearUndo(); rebuildHandles(); }, 30000L);
+        }
+
+        LinearLayout c = UiKit.card(this);
+        c.addView(UiKit.subLabel(this, "每组包含左、右各一个手柄；删除会同时移除两侧。"));
+        for (int i = 1; i <= count; i++) c.addView(groupRow(i));
+        if (count < Prefs.MAX_HANDLES_PER_SIDE) {
+            c.addView(UiKit.clickRow(this, "＋ 添加手柄组", "左右各新增一个手柄，映射默认相同", v -> {
+                prefs.addGroup();
+                rebuildHandles();
+            }));
+        }
+        if (count <= 1) c.addView(UiKit.subLabel(this, "至少保留 1 组手柄。"));
+        group.addView(c);
+
+        LinearLayout s = UiKit.card(this);
         for (String side : Prefs.SIDES) {
             final String fs = side;
-            LinearLayout c = UiKit.card(this);
-            c.addView(UiKit.switchRow(this, "启用" + (side.equals("L") ? "左手柄" : "右手柄"), "点按手柄配置动作与位置",
-                    prefs.sideEnabled(side), v -> prefs.setSideEnabled(fs, v)));
-            int count = prefs.handleCount(side);
-            for (int i = 1; i <= count; i++) {
-                c.addView(handleRow(side, i));
-            }
-            if (count < Prefs.MAX_HANDLES_PER_SIDE) {
-                c.addView(UiKit.clickRow(this, "＋ 添加手柄", "每侧最多 " + Prefs.MAX_HANDLES_PER_SIDE + " 个，各自独立映射",
-                        v -> {
-                            prefs.setHandleCount(fs, prefs.handleCount(fs) + 1);
-                            buildContent();
-                            refreshAll();
-                        }));
-            }
-            group.addView(c);
+            s.addView(UiKit.switchRow(this, "启用" + (side.equals("L") ? "左手柄" : "右手柄"),
+                    "关闭后该侧全部手柄停用，组与配置仍保留",
+                    prefs.sideEnabled(side), v -> { prefs.setSideEnabled(fs, v); refreshAll(); }));
         }
+        group.addView(s);
         return group;
     }
 
-    private View handleRow(String side, int index) {
-        final String id = Prefs.handleId(side, index);
+    private void rebuildHandles() {
+        buildContent();
+        refreshAll();
+    }
+
+    private String sideState(String side, int index) {
+        String id = Prefs.handleId(side, index);
+        if (!prefs.sideEnabled(side) || !prefs.handleEnabled(id)) return "已停用";
+        return "长 " + prefs.handleLen(id) + "% · 位 " + prefs.handlePos(id) + "%";
+    }
+
+    private String groupSummary(int index) {
+        return "左 · " + sideState("L", index) + " ｜ 右 · " + sideState("R", index);
+    }
+
+    private View groupRow(final int index) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(UiKit.dp(this, 58));
-        row.setPadding(0, UiKit.dp(this, 11), 0, UiKit.dp(this, 11));
+        row.setMinimumHeight(UiKit.dp(this, 64));
+        row.setPadding(0, UiKit.dp(this, 10), 0, UiKit.dp(this, 10));
         row.setBackgroundResource(R.drawable.bg_row);
 
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
         texts.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView t1 = new TextView(this);
-        t1.setText((side.equals("L") ? "左手柄 " : "右手柄 ") + index);
+        t1.setText("手柄组 " + index);
         t1.setTextSize(16.5f);
         t1.setLetterSpacing(-0.01f);
         t1.setTextColor(UiKit.col(this, R.color.text_primary));
@@ -467,27 +494,62 @@ public class MainActivity extends AppCompatActivity {
         TextView t2 = new TextView(this);
         t2.setTextSize(13);
         t2.setLineSpacing(UiKit.dp(this, 3), 1f);
+        t2.setPadding(0, UiKit.dp(this, 3), UiKit.dp(this, 8), 0);
         t2.setTextColor(UiKit.col(this, R.color.text_secondary));
-        t2.setPadding(0, UiKit.dp(this, 3), 0, 0);
-        t2.setText(summaryOf(id));
-        handleSummary.put(id, t2);
+        t2.setText(groupSummary(index));
+        handleSummary.put("G" + index, t2);
         texts.addView(t2);
         row.addView(texts);
 
-        SoftSwitch sw = new SoftSwitch(this);
-        sw.setContentDescription((side.equals("L") ? "左" : "右") + "手柄 " + index + " 启用开关");
-        sw.setChecked(prefs.handleEnabled(id));
-        sw.setOnCheckedChangeListener((s, v) -> prefs.setHandleEnabled(id, v));
-        row.addView(sw);
-        row.addView(UiKit.chevron(this));
-
-        row.setOnClickListener(v -> {
-            Intent i = new Intent(this, HandleEditActivity.class);
-            i.putExtra(HandleEditActivity.EXTRA_HANDLE_ID, id);
-            startActivity(i);
-            Motion.openActivity(this);
-        });
+        TextView more = UiKit.pillButton(this, "⋯", v -> showGroupMenu(index));
+        more.setContentDescription("手柄组 " + index + " 的更多操作");
+        row.addView(more);
+        row.setOnClickListener(v -> openHandle(Prefs.handleId("L", index)));
         return row;
+    }
+
+    private void openHandle(String id) {
+        Intent i = new Intent(this, HandleEditActivity.class);
+        i.putExtra(HandleEditActivity.EXTRA_HANDLE_ID, id);
+        startActivity(i);
+        Motion.openActivity(this);
+    }
+
+    private void showGroupMenu(final int index) {
+        boolean both = prefs.bothSidesEnabled(index);
+        String delete = both ? "删除手柄组（左右同时删除）" : "删除手柄组";
+        new AlertDialog.Builder(this).setTitle("手柄组 " + index)
+                .setItems(new String[]{"编辑左手柄", "编辑右手柄", "复制左手柄到右手柄", "复制右手柄到左手柄", delete},
+                        (d, which) -> {
+                            switch (which) {
+                                case 0: openHandle(Prefs.handleId("L", index)); break;
+                                case 1: openHandle(Prefs.handleId("R", index)); break;
+                                case 2: prefs.copySideToOther(index, "L"); rebuildHandles();
+                                    Toast.makeText(this, "已复制到右手柄", Toast.LENGTH_SHORT).show(); break;
+                                case 3: prefs.copySideToOther(index, "R"); rebuildHandles();
+                                    Toast.makeText(this, "已复制到左手柄", Toast.LENGTH_SHORT).show(); break;
+                                default: confirmDeleteGroup(index); break;
+                            }
+                        }).show();
+    }
+
+    private void confirmDeleteGroup(final int index) {
+        if (prefs.groupCount() <= 1) {
+            Toast.makeText(this, "至少保留 1 个手柄组", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        boolean both = prefs.bothSidesEnabled(index);
+        new AlertDialog.Builder(this)
+                .setTitle("删除手柄组 " + index)
+                .setMessage(both ? "将同时删除左手柄和右手柄，是否继续？" : "将删除该手柄，是否继续？")
+                .setPositiveButton("删除", (d, w) -> {
+                    prefs.beginUndo("手柄组 " + index);
+                    prefs.deleteGroup(index);
+                    rebuildHandles();
+                    Toast.makeText(this, "已删除，可撤销", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     private View quickPanelCard() {
@@ -572,7 +634,7 @@ public class MainActivity extends AppCompatActivity {
         c.addView(UiKit.clickRow(this, "适配键盘", keyboardModeLabel(), v -> showKeyboardModeDialog()));
         c.addView(UiKit.switchRow(this, "主屏幕时隐藏触钮", "回到桌面后自动隐藏手柄",
                 prefs.hideOnHome(), v -> prefs.setBool(Prefs.HIDE_ON_HOME, v)));
-        c.addView(UiKit.switchRow(this, "对齐触钮", "左右手柄保持相同长度与位置",
+        c.addView(UiKit.switchRow(this, "对齐触钮", "两侧保持相同尺寸与位置（编辑时联动）",
                 prefs.syncHandles(), v -> prefs.setBool(Prefs.SYNC_HANDLES, v)));
         return c;
     }

@@ -17,6 +17,7 @@ public class HandleEditActivity extends AppCompatActivity {
 
     private Prefs prefs;
     private String handleId;
+    private int groupIndex;
     private boolean advanced;
     private String selectedLength = "S";
     private boolean placement;
@@ -33,6 +34,7 @@ public class HandleEditActivity extends AppCompatActivity {
             return;
         }
         prefs = new Prefs(this);
+        groupIndex = Integer.parseInt(handleId.substring(1));
         if (savedInstanceState != null) {
             advanced = savedInstanceState.getBoolean("advanced"); selectedLength = savedInstanceState.getString("length", "S");
             placement = savedInstanceState.getBoolean("placement");
@@ -61,6 +63,15 @@ public class HandleEditActivity extends AppCompatActivity {
     }
 
     private void build(LinearLayout root) {
+        LinearLayout c0 = UiKit.card(this);
+        c0.addView(UiKit.segmentedTabs(this, new String[]{"左手柄", "右手柄"}, handleId.startsWith("L") ? 0 : 1, sel -> {
+            handleId = (sel == 0 ? "L" : "R") + groupIndex;
+            ((TextView) findViewById(R.id.handleTitle)).setText(displayName());
+            rebuild();
+        }));
+        c0.addView(UiKit.clickRow(this, "复制到对侧", "把这一侧的尺寸与全部映射复制过去", v -> showCopyDialog()));
+        root.addView(c0);
+
         LinearLayout c1 = UiKit.card(this);
         c1.addView(UiKit.switchRow(this, "启用此手柄", null, prefs.handleEnabled(handleId),
                 v -> { prefs.setHandleEnabled(handleId, v); rebuild(); }));
@@ -134,17 +145,16 @@ public class HandleEditActivity extends AppCompatActivity {
         footer.addView(UiKit.subLabel(this, "修改自动保存。上方仅练习短滑；实际边缘手势需开启服务，并按设备调整系统返回边距。"));
         root.addView(footer);
 
-        int index = Integer.parseInt(handleId.substring(1));
-        String side = handleId.substring(0, 1);
-        if (index > 1 && index == prefs.handleCount(side)) {
-            LinearLayout c4 = UiKit.card(this);
-            LinearLayout del = UiKit.clickRow(this, "删除此手柄", "该手柄的手势映射将一并清除",
-                    v -> confirmDelete(side));
-            LinearLayout texts = (LinearLayout) del.getChildAt(0);
-            ((TextView) texts.getChildAt(0)).setTextColor(UiKit.col(this, R.color.danger));
-            c4.addView(del);
-            root.addView(c4);
-        }
+        LinearLayout c4 = UiKit.card(this);
+        final boolean canDelete = prefs.groupCount() > 1;
+        String delSub = !canDelete ? "至少保留 1 个手柄组"
+                : prefs.bothSidesEnabled(groupIndex) ? "将同时删除左手柄和右手柄" : "将删除该侧手柄";
+        LinearLayout del = UiKit.clickRow(this, "删除手柄组 " + groupIndex, delSub,
+                v -> { if (canDelete) confirmDelete(); });
+        LinearLayout texts = (LinearLayout) del.getChildAt(0);
+        ((TextView) texts.getChildAt(0)).setTextColor(UiKit.col(this, canDelete ? R.color.danger : R.color.text_secondary));
+        c4.addView(del);
+        root.addView(c4);
     }
 
     private void rebuild() {
@@ -182,18 +192,30 @@ public class HandleEditActivity extends AppCompatActivity {
         return r.row;
     }
 
-    private void confirmDelete(String side) {
+    private void confirmDelete() {
+        boolean both = prefs.bothSidesEnabled(groupIndex);
         new AlertDialog.Builder(this)
-                .setTitle("删除此手柄")
-                .setMessage("将删除该手柄及其全部手势映射，是否继续？")
+                .setTitle("删除手柄组 " + groupIndex)
+                .setMessage(both ? "将同时删除左手柄和右手柄，是否继续？" : "将删除该手柄，是否继续？")
                 .setPositiveButton("删除", (d, w) -> {
-                    prefs.removeHandle(handleId);
-                    prefs.setHandleCount(side, prefs.handleCount(side) - 1);
-                    Toast.makeText(this, "已删除", Toast.LENGTH_SHORT).show();
+                    prefs.beginUndo("手柄组 " + groupIndex);
+                    prefs.deleteGroup(groupIndex);
+                    Toast.makeText(this, "已删除，可在首页撤销", Toast.LENGTH_SHORT).show();
                     finish();
                 })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    private void showCopyDialog() {
+        final String side = handleId.startsWith("L") ? "L" : "R";
+        final String other = side.equals("L") ? "R" : "L";
+        new AlertDialog.Builder(this).setTitle("复制映射")
+                .setItems(new String[]{"复制此侧到对侧", "从对侧复制到此侧"}, (d, which) -> {
+                    prefs.copySideToOther(groupIndex, which == 0 ? side : other);
+                    Toast.makeText(this, "已复制", Toast.LENGTH_SHORT).show();
+                    rebuild();
+                }).show();
     }
 
     private String dirName(String dir) {

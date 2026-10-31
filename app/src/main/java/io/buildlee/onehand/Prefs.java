@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
@@ -92,6 +93,7 @@ public class Prefs {
         this.ctx = ctx.getApplicationContext();
         this.sp = this.ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE);
         migrateIfNeeded();
+        migrateGroupsIfNeeded();
     }
 
     private void migrateIfNeeded() {
@@ -157,6 +159,8 @@ public class Prefs {
     public static String handleId(String side, int index) { return side + index; }
 
     public int handleCount(String side) {
+        int g = getInt(GROUP_COUNT, -1);
+        if (g >= 1) return Math.max(1, Math.min(MAX_HANDLES_PER_SIDE, g));
         return Math.max(1, Math.min(MAX_HANDLES_PER_SIDE, getInt("handle_count_" + side, 1)));
     }
 
@@ -222,6 +226,149 @@ public class Prefs {
         e.remove("pkg_" + pslot);
         e.remove("label_" + pslot);
         e.apply();
+    }
+
+
+    // ---------------- 手柄组（左右成对，v3） ----------------
+
+    public static final String GROUP_COUNT = "group_count";
+    public static final String GROUPS_MODEL = "groups_model";
+
+    /** 旧版每侧独立计数 → 组模型：两侧数量取大者，多出来的一侧标记停用，不丢数据。 */
+    private void migrateGroupsIfNeeded() {
+        if (sp.getInt(GROUPS_MODEL, 0) >= 1) return;
+        int l = Math.max(1, Math.min(MAX_HANDLES_PER_SIDE, sp.getInt("handle_count_L", 1)));
+        int r = Math.max(1, Math.min(MAX_HANDLES_PER_SIDE, sp.getInt("handle_count_R", 1)));
+        int g = Math.max(l, r);
+        SharedPreferences.Editor e = sp.edit();
+        e.putInt(GROUP_COUNT, g);
+        e.putInt("handle_count_L", g);
+        e.putInt("handle_count_R", g);
+        for (int i = 1; i <= g; i++) {
+            if (i > l) e.putBoolean("h_L" + i + "_enabled", false);
+            if (i > r) e.putBoolean("h_R" + i + "_enabled", false);
+        }
+        e.putInt(GROUPS_MODEL, 1);
+        e.apply();
+    }
+
+    public int groupCount() {
+        int g = getInt(GROUP_COUNT, -1);
+        if (g >= 1) return Math.max(1, Math.min(MAX_HANDLES_PER_SIDE, g));
+        return Math.max(1, Math.min(MAX_HANDLES_PER_SIDE, Math.max(handleCount("L"), handleCount("R"))));
+    }
+
+    /** 新增一组：左右同时出现，映射走默认值 */
+    public int addGroup() {
+        int n = groupCount();
+        if (n >= MAX_HANDLES_PER_SIDE) return n;
+        SharedPreferences.Editor e = sp.edit();
+        e.putInt(GROUP_COUNT, n + 1).putInt("handle_count_L", n + 1).putInt("handle_count_R", n + 1);
+        e.putBoolean("h_L" + (n + 1) + "_enabled", true);
+        e.putBoolean("h_R" + (n + 1) + "_enabled", true);
+        e.apply();
+        return n + 1;
+    }
+
+    public boolean bothSidesEnabled(int index) {
+        return handleEnabled(handleId("L", index)) && handleEnabled(handleId("R", index));
+    }
+
+    /** 删除一组：左右一起删，后面的组前移补位 */
+    public void deleteGroup(int index) {
+        int n = groupCount();
+        if (index < 1 || index > n || n <= 1) return;
+        for (int i = index; i < n; i++) {
+            for (String side : SIDES) moveHandleKeys(handleId(side, i + 1), handleId(side, i));
+        }
+        SharedPreferences.Editor e = sp.edit();
+        for (String side : SIDES) removeHandleKeys(e, handleId(side, n));
+        int left = n - 1;
+        e.putInt(GROUP_COUNT, left).putInt("handle_count_L", left).putInt("handle_count_R", left);
+        e.apply();
+    }
+
+    private void moveHandleKeys(String from, String to) {
+        Map<String, ?> all = sp.getAll();
+        SharedPreferences.Editor e = sp.edit();
+        String[] fromPrefixes = {"h_" + from + "_", "act_" + from + "-", "pkg_" + from + "-", "label_" + from + "-"};
+        String[] toPrefixes = {"h_" + to + "_", "act_" + to + "-", "pkg_" + to + "-", "label_" + to + "-"};
+        for (Map.Entry<String, ?> en : all.entrySet()) {
+            String k = en.getKey();
+            for (int i = 0; i < fromPrefixes.length; i++) {
+                if (!k.startsWith(fromPrefixes[i])) continue;
+                putValue(e, toPrefixes[i] + k.substring(fromPrefixes[i].length()), en.getValue());
+                e.remove(k);
+                break;
+            }
+        }
+        e.apply();
+    }
+
+    private void removeHandleKeys(SharedPreferences.Editor e, String id) {
+        for (String k : new java.util.ArrayList<>(sp.getAll().keySet())) {
+            if (k.startsWith("h_" + id + "_") || k.startsWith("act_" + id + "-")
+                    || k.startsWith("pkg_" + id + "-") || k.startsWith("label_" + id + "-")) e.remove(k);
+        }
+    }
+
+    private void putValue(SharedPreferences.Editor e, String key, Object v) {
+        if (v instanceof Boolean) e.putBoolean(key, (Boolean) v);
+        else if (v instanceof Integer) e.putInt(key, (Integer) v);
+        else if (v instanceof Long) e.putLong(key, (Long) v);
+        else if (v instanceof Float) e.putFloat(key, (Float) v);
+        else e.putString(key, String.valueOf(v));
+    }
+
+    /** 把一侧的尺寸/外观/映射整份复制到对侧 */
+    public void copySideToOther(int index, String fromSide) {
+        String from = handleId(fromSide, index);
+        String to = handleId(fromSide.equals("L") ? "R" : "L", index);
+        SharedPreferences.Editor e = sp.edit();
+        for (String suffix : new String[]{"_enabled", "_len", "_pos", "_alpha", "_priority_dp"}) {
+            Object v = sp.getAll().get("h_" + from + suffix);
+            if (v != null) putValue(e, "h_" + to + suffix, v);
+        }
+        for (String len : SLOT_LENS) for (String dir : DIRS) copySlot(e, slot(from, len, dir), slot(to, len, dir));
+        copySlot(e, pressSlot(from), pressSlot(to));
+        e.apply();
+    }
+
+    private void copySlot(SharedPreferences.Editor e, String fromSlot, String toSlot) {
+        String a = getStr("act_" + fromSlot, null);
+        String p = getStr("pkg_" + fromSlot, null);
+        String l = getStr("label_" + fromSlot, null);
+        if (a != null) e.putString("act_" + toSlot, a); else e.remove("act_" + toSlot);
+        if (p != null) e.putString("pkg_" + toSlot, p); else e.remove("pkg_" + toSlot);
+        if (l != null) e.putString("label_" + toSlot, l); else e.remove("label_" + toSlot);
+    }
+
+    // ---------------- 撤销（删除组的一次性回滚） ----------------
+
+    private static Map<String, ?> undoSnapshot;
+    private static String undoLabel;
+    private static long undoAt;
+
+    public void beginUndo(String label) {
+        undoSnapshot = new HashMap<>(sp.getAll());
+        undoLabel = label;
+        undoAt = android.os.SystemClock.elapsedRealtime();
+    }
+
+    public static boolean hasUndo() {
+        return undoSnapshot != null && android.os.SystemClock.elapsedRealtime() - undoAt < 30000L;
+    }
+
+    public static String undoLabel() { return undoLabel; }
+
+    public static void clearUndo() { undoSnapshot = null; undoLabel = null; undoAt = 0L; }
+
+    public void performUndo() {
+        if (undoSnapshot == null) return;
+        SharedPreferences.Editor e = sp.edit().clear();
+        for (Map.Entry<String, ?> en : undoSnapshot.entrySet()) putValue(e, en.getKey(), en.getValue());
+        e.apply();
+        clearUndo();
     }
 
     // ---------------- 全局参数 ----------------
@@ -471,7 +618,8 @@ public class Prefs {
         for (String name : new String[]{MODEL, HANDLE_WIDTH_DP, SHORT_TRIGGER_DP, LONG_TRIGGER_DP,
                 HOLD_MS, HANDLE_MARGIN_DP, ANGLE_DEG, VIBRATE_AMP, LONG_HOLD_MS, ANIM_STYLE,
                 ANIM_COLOR, HANDLE_COLOR, FEEDBACK_STYLE, WAVE_FILL, WAVE_ARROW, WAVE_OUTLINE,
-                WAVE_TRANSPARENCY, THEME, OLD_HANDLE_HEIGHT_PCT, OLD_HANDLE_POS_PCT, OLD_HANDLE_ALPHA})
+                WAVE_TRANSPARENCY, THEME, OLD_HANDLE_HEIGHT_PCT, OLD_HANDLE_POS_PCT, OLD_HANDLE_ALPHA,
+                GROUP_COUNT, GROUPS_MODEL})
             if (key.equals(name)) return "i";
         return null;
     }
