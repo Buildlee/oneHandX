@@ -32,6 +32,11 @@ public class Prefs {
     public static final String HANDLE_MARGIN_DP = "handle_margin_dp";
     public static final String HANDLE_PRIORITY = "handle_priority";
 
+    // v0.7：动作序列与动作面板
+    public static final String PANEL_STYLE = "panel_style";   // 0 文件夹，1 扇形
+    public static final String SEQ_PREFIX = "seq_";
+    public static final int PANEL_SLOTS = 8;
+
     // v0.4：对齐 One Hand Operation+ 的参数
     public static final String ANGLE_DEG = "angle_deg";
     public static final String QUICK_VIBRATE = "quick_vibrate";
@@ -473,19 +478,108 @@ public class Prefs {
     public String actionLabel(String slot) { return getStr("label_" + slot, ""); }
     public void setActionLabel(String slot, String label) { setStr("label_" + slot, label); }
 
-    public String displayFor(String slot) {
-        GestureAction a = GestureAction.fromId(actionId(slot));
+    /** 一个手势可绑定的单步动作：动作 id + 可选包名/名称。 */
+    public static final class Step {
+        public final String id;
+        public final String pkg;
+        public final String label;
+
+        public Step(String id, String pkg, String label) {
+            this.id = id == null ? GestureAction.NONE.id : id;
+            this.pkg = pkg == null ? "" : pkg;
+            this.label = label == null ? "" : label;
+        }
+
+        public GestureAction action() { return GestureAction.fromId(id); }
+        public boolean isNone() { return action() == GestureAction.NONE; }
+    }
+
+    private static String seqEsc(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n");
+    }
+
+    private static String seqUnesc(String s) {
+        if (s == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length()) {
+                char n = s.charAt(++i);
+                if (n == 't') sb.append('\t');
+                else if (n == 'n') sb.append('\n');
+                else sb.append(n);
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** 槽位的动作序列；旧版单动作自动视为 1 步；未配置返回空表。 */
+    public java.util.List<Step> steps(String slot) {
+        java.util.ArrayList<Step> out = new java.util.ArrayList<>();
+        String raw = getStr(SEQ_PREFIX + slot, null);
+        if (raw != null && !raw.isEmpty()) {
+            for (String line : raw.split("\n")) {
+                if (line.isEmpty()) continue;
+                String[] parts = line.split("\t", -1);
+                Step st = new Step(seqUnesc(parts[0]),
+                        parts.length > 1 ? seqUnesc(parts[1]) : "",
+                        parts.length > 2 ? seqUnesc(parts[2]) : "");
+                if (!st.isNone()) out.add(st);
+            }
+            return out;
+        }
+        Step single = new Step(actionId(slot), actionPkg(slot), actionLabel(slot));
+        if (!single.isNone()) out.add(single);
+        return out;
+    }
+
+    /** 写入动作序列；同时把首步同步到 act_/pkg_/label_，保持旧逻辑与备份兼容。 */
+    public void setSteps(String slot, java.util.List<Step> in) {
+        java.util.ArrayList<Step> list = new java.util.ArrayList<>();
+        if (in != null) {
+            for (Step s : in) if (s != null && !s.isNone()) list.add(s);
+        }
+        SharedPreferences.Editor e = sp.edit();
+        if (list.isEmpty()) {
+            e.putString("act_" + slot, GestureAction.NONE.id);
+            e.remove("pkg_" + slot);
+            e.remove("label_" + slot);
+            e.remove(SEQ_PREFIX + slot);
+            e.apply();
+            return;
+        }
+        Step first = list.get(0);
+        e.putString("act_" + slot, first.id);
+        if (first.pkg.isEmpty()) e.remove("pkg_" + slot); else e.putString("pkg_" + slot, first.pkg);
+        if (first.label.isEmpty()) e.remove("label_" + slot); else e.putString("label_" + slot, first.label);
+        if (list.size() == 1) {
+            e.remove(SEQ_PREFIX + slot);
+        } else {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < list.size(); i++) {
+                if (i > 0) sb.append('\n');
+                Step st = list.get(i);
+                sb.append(seqEsc(st.id)).append('\t').append(seqEsc(st.pkg)).append('\t').append(seqEsc(st.label));
+            }
+            e.putString(SEQ_PREFIX + slot, sb.toString());
+        }
+        e.apply();
+    }
+
+    public String stepText(Step s) {
+        GestureAction a = s.action();
         if (a == GestureAction.LAUNCH_APP) {
-            String label = actionLabel(slot);
-            if (label != null && !label.isEmpty()) return label;
-            String pkg = actionPkg(slot);
-            if (pkg != null && !pkg.isEmpty()) {
+            if (!s.label.isEmpty()) return s.label;
+            if (!s.pkg.isEmpty()) {
                 try {
                     return ctx.getPackageManager()
-                            .getApplicationLabel(ctx.getPackageManager().getApplicationInfo(pkg, 0))
+                            .getApplicationLabel(ctx.getPackageManager().getApplicationInfo(s.pkg, 0))
                             .toString();
                 } catch (Exception e) {
-                    return pkg;
+                    return s.pkg;
                 }
             }
             return "打开应用…";
@@ -493,10 +587,23 @@ public class Prefs {
         return a.label;
     }
 
+    public String displayFor(String slot) {
+        java.util.List<Step> list = steps(slot);
+        if (list.isEmpty()) return GestureAction.NONE.label;
+        String head = stepText(list.get(0));
+        return list.size() == 1 ? head : head + " · 共 " + list.size() + " 个动作";
+    }
+
     // ---------------- 快速面板 ----------------
 
     public String quickToolSlot(int i) { return "QT" + i; }
     public String quickAppSlot(int i) { return "QS" + i; }
+
+    // ---------------- 动作面板 ----------------
+
+    public String panelSlot(int i) { return "PN" + i; }
+    public int panelStyle() { return getInt(PANEL_STYLE, 0); }
+    public void setPanelStyle(int v) { setInt(PANEL_STYLE, v); }
 
     // ---------------- 排除应用 ----------------
 
@@ -615,7 +722,7 @@ public class Prefs {
     }
 
     private String expectedType(String key) {
-        if (key.startsWith("act_") || key.startsWith("pkg_") || key.startsWith("label_")
+        if (key.startsWith("act_") || key.startsWith("pkg_") || key.startsWith("label_") || key.startsWith(SEQ_PREFIX)
                 || key.equals(KEYBOARD_MODE) || key.equals(EXCLUDED_APPS)) return "s";
         if (key.startsWith("h_")) return key.endsWith("_enabled") ? "b" : "i";
         if (key.startsWith("handle_count_")) return "i";
@@ -627,7 +734,7 @@ public class Prefs {
                 HOLD_MS, HANDLE_MARGIN_DP, ANGLE_DEG, VIBRATE_AMP, LONG_HOLD_MS, ANIM_STYLE,
                 ANIM_COLOR, HANDLE_COLOR, FEEDBACK_STYLE, WAVE_FILL, WAVE_ARROW, WAVE_OUTLINE,
                 WAVE_TRANSPARENCY, THEME, OLD_HANDLE_HEIGHT_PCT, OLD_HANDLE_POS_PCT, OLD_HANDLE_ALPHA,
-                GROUP_COUNT, GROUPS_MODEL})
+                GROUP_COUNT, GROUPS_MODEL, PANEL_STYLE})
             if (key.equals(name)) return "i";
         return null;
     }

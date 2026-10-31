@@ -90,6 +90,9 @@
         <activity
             android:name=".HandleEditActivity"
             android:exported="false" />
+        <activity
+            android:name=".SlotEditorActivity"
+            android:exported="false" />
         <activity android:name=".AppearanceActivity" android:exported="false" />
 
         <activity

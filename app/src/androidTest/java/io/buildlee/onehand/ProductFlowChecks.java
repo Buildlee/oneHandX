@@ -77,26 +77,35 @@ final class ProductFlowChecks {
         check(beforePractice.equals(prefs.dumpJson()), "practice never changes configuration");
         check(!editor.isFinishing(), "practice never executes Back or Home");
 
-        click(editor, "短滑 · 向右滑动");
+        SlotEditorActivity seq = (SlotEditorActivity) next(editor, "短滑 · 向右滑动", SlotEditorActivity.class);
+        assertText(seq, "共 1 个动作 · 从上到下依次执行");
+        click(seq, "清空动作序列");
+        clickDialog("清空");
+        assertText(seq, "当前为空 · 该手势不会触发");
+        click(seq, "添加动作");
         chooseAction("音量", "音量 +");
-        check("volume_up".equals(prefs.actionId("L1-S-H")), "actual action picker saves selected slot");
+        check("volume_up".equals(prefs.actionId("L1-S-H")), "sequence editor stores the picked action");
+        ui(seq::finish); test.waitForIdleSync(); waitForFocus(editor);
         swipe(editor, true, 0, MotionEvent.ACTION_UP);
         assertText(editor, "已识别 · 音量 +\n未执行系统动作");
         screenshot("product-practice");
 
-        click(editor, "短滑 · 向右滑动");
+        seq = (SlotEditorActivity) next(editor, "短滑 · 向右滑动", SlotEditorActivity.class);
         Instrumentation.ActivityMonitor appMonitor = test.addMonitor(AppPickerActivity.class.getName(), null, false);
+        click(seq, "添加动作");
         chooseAction("打开应用", "打开应用");
         AppPickerActivity picker = (AppPickerActivity) test.waitForMonitorWithTimeout(appMonitor, 5000);
         test.removeMonitor(appMonitor);
-        check(picker != null, "application selection opens from actual gesture row");
+        check(picker != null, "application selection opens from sequence editor");
         waitForFocus(picker);
         ui(() -> picker.findViewById(R.id.btnBack).performClick()); test.waitForIdleSync();
-        waitForFocus(editor);
+        waitForFocus(seq);
         check("volume_up".equals(prefs.actionId("L1-S-H")), "cancelled application selection preserves old action");
 
-        click(editor, "短滑 · 向右滑动");
+        click(seq, "清空动作序列");
+        clickDialog("清空");
         appMonitor = test.addMonitor(AppPickerActivity.class.getName(), null, false);
+        click(seq, "添加动作");
         chooseAction("打开应用", "打开应用");
         AppPickerActivity selection = (AppPickerActivity) test.waitForMonitorWithTimeout(appMonitor, 5000);
         test.removeMonitor(appMonitor);
@@ -113,8 +122,9 @@ final class ProductFlowChecks {
         check(loaded[0], "installed applications load");
         ui(() -> list.performItemClick(list.getChildAt(0), 0, list.getAdapter().getItemId(0)));
         test.waitForIdleSync();
-        waitForFocus(editor);
+        waitForFocus(seq);
         check("launch_app".equals(prefs.actionId("L1-S-H")) && !prefs.actionPkg("L1-S-H").isEmpty(), "selecting application commits complete configuration");
+        ui(seq::finish); test.waitForIdleSync(); waitForFocus(editor);
         swipe(editor, true, 0, MotionEvent.ACTION_UP);
         assertText(editor, "已识别 · " + prefs.displayFor("L1-S-H") + "\n未执行系统动作");
 
@@ -219,6 +229,22 @@ final class ProductFlowChecks {
     private void inject(float x, float y, int action, long down) {
         MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0);
         try { test.sendPointerSync(event); } finally { event.recycle(); }
+    }
+    private void clickDialog(String label) throws Exception {
+        test.waitForIdleSync();
+        final View[] root = new View[1];
+        long deadline = SystemClock.uptimeMillis() + 5000;
+        do {
+            ui(() -> {
+                View focused = TestViews.focusedRoot();
+                if (focused != null && TestViews.text(focused, label) != null) root[0] = focused;
+            });
+            if (root[0] != null) break;
+            Thread.sleep(100);
+        } while (SystemClock.uptimeMillis() < deadline);
+        check(root[0] != null, "dialog button visible: " + label);
+        ui(() -> TestViews.click(root[0], label));
+        test.waitForIdleSync();
     }
     private void assertText(Activity activity, String label) {
         ui(() -> check(TestViews.text(activity.getWindow().getDecorView(), label) != null, "visible text: " + label));

@@ -32,6 +32,10 @@ public class AppPickerActivity extends AppCompatActivity {
 
     public static final String EXTRA_SLOT = "slot";
     public static final String EXTRA_SLOT_NAME = "slot_name";
+    /** 动作序列：替换该下标步骤；-1 表示把整个槽位设为单个应用动作 */
+    public static final String EXTRA_STEP_INDEX = "step_index";
+    /** 动作序列：追加为最后一步 */
+    public static final String EXTRA_APPEND = "append";
 
     public static class Entry {
         public String label;
@@ -67,12 +71,22 @@ public class AppPickerActivity extends AppCompatActivity {
         ListView list = findViewById(R.id.appList);
         adapter = new AppAdapter();
         list.setAdapter(adapter);
+        final int stepIndex = getIntent().getIntExtra(EXTRA_STEP_INDEX, -1);
+        final boolean append = getIntent().getBooleanExtra(EXTRA_APPEND, false);
         list.setOnItemClickListener((parent, view, position, id) -> {
             Entry e = shown.get(position);
             Prefs prefs = new Prefs(this);
-            prefs.setActionId(slot, GestureAction.LAUNCH_APP.id);
-            prefs.setActionPkg(slot, e.pkg);
-            prefs.setActionLabel(slot, e.label);
+            Prefs.Step step = new Prefs.Step(GestureAction.LAUNCH_APP.id, e.pkg, e.label);
+            java.util.List<Prefs.Step> steps = new java.util.ArrayList<>(prefs.steps(slot));
+            if (append) {
+                steps.add(step);
+            } else if (stepIndex >= 0 && stepIndex < steps.size()) {
+                steps.set(stepIndex, step);
+            } else {
+                steps.clear();
+                steps.add(step);
+            }
+            prefs.setSteps(slot, steps);
             Toast.makeText(this, "已设置：" + e.label, Toast.LENGTH_SHORT).show();
             finish();
         });

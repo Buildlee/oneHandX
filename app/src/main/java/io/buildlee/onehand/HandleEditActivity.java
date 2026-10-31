@@ -171,28 +171,15 @@ public class HandleEditActivity extends AppCompatActivity {
     }
 
     private View slotRowFor(final String slot, final String title, int iconRes) {
-        final UiKit.SlotRow[] holder = new UiKit.SlotRow[1];
         UiKit.SlotRow r = UiKit.gestureRow(this, title, prefs.displayFor(slot), handleId.startsWith("L"),
                 slot.endsWith("-U") ? -1 : slot.endsWith("-D") ? 1 : 0,
-                v -> ActionDialog.show(this, displayName() + " · " + title,
-                        prefs.actionId(slot),
-                        action -> {
-                            if (action.needsApp) {
-                                Intent i = new Intent(this, AppPickerActivity.class);
-                                i.putExtra(AppPickerActivity.EXTRA_SLOT, slot);
-                                i.putExtra(AppPickerActivity.EXTRA_SLOT_NAME, displayName() + " · " + title);
-                                startActivity(i);
-                                Motion.openActivity(this);
-                            } else {
-                                prefs.setActionId(slot, action.id);
-                                boolean none = GestureAction.NONE.id.equals(prefs.actionId(slot));
-                                holder[0].value.setText(prefs.displayFor(slot));
-                                holder[0].value.setTextColor(UiKit.col(this,
-                                        none ? R.color.text_secondary : R.color.text_primary));
-                                practice.refreshMapping();
-                            }
-                        }));
-        holder[0] = r;
+                v -> {
+                    Intent i = new Intent(this, SlotEditorActivity.class);
+                    i.putExtra(SlotEditorActivity.EXTRA_SLOT, slot);
+                    i.putExtra(SlotEditorActivity.EXTRA_NAME, displayName() + " · " + title);
+                    startActivity(i);
+                    Motion.openActivity(this);
+                });
         return r.row;
     }
 

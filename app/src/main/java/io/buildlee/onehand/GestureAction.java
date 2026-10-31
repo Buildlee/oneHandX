@@ -17,6 +17,7 @@ public enum GestureAction {
     ASSISTANT("assistant", "语音助手", false),
     SEARCH("search", "搜索查找", false),
     LAUNCH_APP("launch_app", "打开应用", true),
+    ACTION_PANEL("action_panel", "动作面板", false),
     QUICK_TOOLS("quick_tools", "快速工具", false),
     QUICK_LAUNCHER("quick_launcher", "快速启动器", false),
     TASK_SWITCHER("task_switcher", "任务切换器", false),
@@ -52,7 +53,7 @@ public enum GestureAction {
             NONE, BACK, HOME, RECENTS, PREVIOUS_APP, SPLIT_SCREEN,
             NOTIFICATIONS, QUICK_SETTINGS, KEYBOARD_PICKER, SCREENSHOT, LOCK_SCREEN, POWER_MENU,
             TORCH, ASSISTANT, SEARCH, LAUNCH_APP,
-            QUICK_TOOLS, QUICK_LAUNCHER, TASK_SWITCHER, TOUCHPAD, FLOAT_NAV,
+            ACTION_PANEL, QUICK_TOOLS, QUICK_LAUNCHER, TASK_SWITCHER, TOUCHPAD, FLOAT_NAV,
             VOLUME_UP, VOLUME_DOWN, VOLUME_PANEL, MUTE_ON, MUTE_OFF,
             PLAY_PAUSE, PREV_TRACK, NEXT_TRACK,
             SCREEN_TIMEOUT, ROTATE, ROTATE_RIGHT, ROTATE_LEFT, NAVBAR_TOGGLE, COLOR_INVERT,
@@ -60,7 +61,7 @@ public enum GestureAction {
     };
 
     public static boolean isPanelAction(GestureAction a) {
-        return a == QUICK_TOOLS || a == QUICK_LAUNCHER || a == TASK_SWITCHER;
+        return a == ACTION_PANEL || a == QUICK_TOOLS || a == QUICK_LAUNCHER || a == TASK_SWITCHER;
     }
 
     /** 配置快速工具按钮时可选的列表（排除面板类动作，避免递归） */
@@ -84,7 +85,8 @@ public enum GestureAction {
     public String category() {
         switch (this) {
             case NONE: case BACK: case HOME: case RECENTS: case PREVIOUS_APP: return "导航";
-            case QUICK_TOOLS: case QUICK_LAUNCHER: case TASK_SWITCHER: case TOUCHPAD: case FLOAT_NAV: return "面板";
+            case ACTION_PANEL: case QUICK_TOOLS: case QUICK_LAUNCHER: case TASK_SWITCHER:
+            case TOUCHPAD: case FLOAT_NAV: return "面板";
             case VOLUME_UP: case VOLUME_DOWN: case VOLUME_PANEL: case MUTE_ON: case MUTE_OFF:
             case PLAY_PAUSE: case PREV_TRACK: case NEXT_TRACK: return "媒体";
             case SPLIT_SCREEN: case KEYBOARD_PICKER: case NAVBAR_TOGGLE: case COLOR_INVERT: return "高级";
@@ -105,6 +107,7 @@ public enum GestureAction {
             case TASK_SWITCHER: return "仅显示本服务观察到的应用历史";
             case HIDE_HANDLES: return "隐藏 30 秒后自动恢复";
             case LAUNCH_APP: return "选择动作后指定应用";
+            case ACTION_PANEL: return "在「面板 → 动作面板」配置按钮与排布";
             default: return "";
         }
     }

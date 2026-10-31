@@ -59,6 +59,9 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
     private static final int PANEL_QUICK_TOOLS = 0;
     private static final int PANEL_QUICK_LAUNCHER = 1;
     private static final int PANEL_TASK_SWITCHER = 2;
+    private static final int PANEL_ACTIONS = 3;
+    /** 多动作序列的步间隔 */
+    private static final long SEQ_GAP_MS = 150;
 
     private Prefs prefs;
     private WindowManager wm;
@@ -954,20 +957,40 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
             return;
         }
         String slot = Prefs.slot(handleId, len, dir);
-        GestureAction action = GestureAction.fromId(prefs.actionId(slot));
-        if (action == GestureAction.NONE && "L".equals(len)) {
+        java.util.List<Prefs.Step> steps = prefs.steps(slot);
+        if (steps.isEmpty() && "L".equals(len)) {
             slot = Prefs.slot(handleId, "S", dir);
-            action = GestureAction.fromId(prefs.actionId(slot));
+            steps = prefs.steps(slot);
         }
-        if (action == GestureAction.NONE) {
+        if (steps.isEmpty()) {
             Log.i(TAG, "gesture slot=" + slot + " action=none");
             return;
         }
-        boolean ok = execute(action, prefs.actionPkg(slot), leftSide);
+        if (steps.size() > 1) {
+            runSteps(slot, steps, 0, leftSide);
+            return;
+        }
+        GestureAction action = steps.get(0).action();
+        boolean ok = execute(action, steps.get(0).pkg, leftSide);
         if (!ok && action == GestureAction.BACK && takeoverWindows && takeover != null) takeover.stop();
         boolean pendingShot = action == GestureAction.SCREENSHOT && ok;
         Log.i(TAG, "gesture slot=" + slot + " action=" + action.id + (pendingShot ? " submitted=true" : " ok=" + ok));
         if (ok && !pendingShot && prefs.vibrate() && !quickVibed) hapticOnce();
+    }
+
+    /** 依次执行多动作序列；单步失败不打断后续步骤。 */
+    private void runSteps(final String slot, final java.util.List<Prefs.Step> steps,
+                          final int index, final boolean leftSide) {
+        if (index >= steps.size()) return;
+        final Prefs.Step step = steps.get(index);
+        boolean ok = execute(step.action(), step.pkg, leftSide);
+        Log.i(TAG, "seq slot=" + slot + " step=" + (index + 1) + "/" + steps.size()
+                + " action=" + step.id + " ok=" + ok);
+        if (index + 1 < steps.size()) {
+            main.postDelayed(() -> runSteps(slot, steps, index + 1, leftSide), SEQ_GAP_MS);
+        } else if (prefs.vibrate() && !quickVibed) {
+            hapticOnce();
+        }
     }
 
     // ---------------- 动作执行 ----------------
@@ -1019,6 +1042,9 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
                 return search();
             case LAUNCH_APP:
                 return launchApp(pkg);
+            case ACTION_PANEL:
+                showPanel(PANEL_ACTIONS, leftSide);
+                return true;
             case QUICK_TOOLS:
                 showPanel(PANEL_QUICK_TOOLS, leftSide);
                 return true;
@@ -1454,6 +1480,10 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
     // ---------------- 快速面板 ----------------
 
     private void showPanel(int mode, boolean leftSide) {
+        if (mode == PANEL_ACTIONS && prefs != null && prefs.panelStyle() == 1) {
+            showFanPanel(leftSide);
+            return;
+        }
         dismissPanel();
         if (wm == null || prefs == null) return;
 
@@ -1470,7 +1500,8 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
         close.setLayoutParams(new LinearLayout.LayoutParams(Du.dp(this, 190), Du.dp(this, 48)));
         panel.addView(close);
 
-        if (mode == PANEL_QUICK_TOOLS) buildQuickTools(panel);
+        if (mode == PANEL_ACTIONS) buildActionPanel(panel);
+        else if (mode == PANEL_QUICK_TOOLS) buildQuickTools(panel);
         else if (mode == PANEL_QUICK_LAUNCHER) buildQuickLauncher(panel);
         else buildTaskSwitcher(panel);
 
@@ -1521,6 +1552,199 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
             Motion.fadeOut(pv, () -> {
                 try { wm.removeViewImmediate(pv); } catch (Exception ignored) {}
             });
+        }
+    }
+
+    // ---------------- 动作面板（扇形 / 文件夹） ----------------
+
+    private void collectPanelItems(java.util.List<GestureAction> actions,
+                                   java.util.List<String> pkgs,
+                                   java.util.List<String> labels) {
+        for (int i = 1; i <= Prefs.PANEL_SLOTS; i++) {
+            String slot = prefs.panelSlot(i);
+            GestureAction a = GestureAction.fromId(prefs.actionId(slot));
+            if (a == GestureAction.NONE) continue;
+            actions.add(a);
+            pkgs.add(prefs.actionPkg(slot));
+            labels.add(prefs.displayFor(slot));
+        }
+    }
+
+    private void buildActionPanel(LinearLayout panel) {
+        java.util.List<GestureAction> actions = new java.util.ArrayList<>();
+        java.util.List<String> pkgs = new java.util.ArrayList<>();
+        java.util.List<String> labels = new java.util.ArrayList<>();
+        collectPanelItems(actions, pkgs, labels);
+        if (actions.isEmpty()) {
+            panel.addView(panelHint("未配置按钮 · 应用 → 面板 → 动作面板"));
+            return;
+        }
+        LinearLayout row = null;
+        for (int i = 0; i < actions.size(); i++) {
+            if (i % 2 == 0) {
+                row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setLayoutParams(new LinearLayout.LayoutParams(
+                        Du.dp(this, 190), LinearLayout.LayoutParams.WRAP_CONTENT));
+                panel.addView(row);
+            }
+            final GestureAction a = actions.get(i);
+            final String pkg = pkgs.get(i);
+            final int itemNo = i + 1;
+            row.addView(panelButton(labels.get(i), v -> {
+                boolean ok = execute(a, pkg, true);
+                Log.i(TAG, "panel item=" + itemNo + " action=" + a.id + " ok=" + ok);
+                if (ok && prefs.vibrate() && immediateFeedback(a)) hapticOnce();
+                dismissPanel();
+            }));
+        }
+    }
+
+    private void showFanPanel(boolean leftSide) {
+        dismissPanel();
+        if (wm == null || prefs == null) return;
+        java.util.List<GestureAction> actions = new java.util.ArrayList<>();
+        java.util.List<String> pkgs = new java.util.ArrayList<>();
+        java.util.List<String> labels = new java.util.ArrayList<>();
+        collectPanelItems(actions, pkgs, labels);
+        if (actions.isEmpty()) {
+            Toast.makeText(this, "动作面板还没有按钮，去「面板 → 动作面板」添加", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        android.widget.FrameLayout host = new android.widget.FrameLayout(this);
+        host.setBackgroundColor(0x8C000000);
+        host.setOnClickListener(v -> dismissPanel());
+
+        TextView hint = new TextView(this);
+        hint.setText("点按空白处关闭");
+        hint.setTextSize(12);
+        hint.setTextColor(0xE6FFFFFF);
+        GradientDrawable capsule = new GradientDrawable();
+        capsule.setCornerRadius(Du.dp(this, 14));
+        capsule.setColor(0x33000000);
+        hint.setBackground(capsule);
+        hint.setPadding(Du.dp(this, 14), Du.dp(this, 7), Du.dp(this, 14), Du.dp(this, 7));
+        hint.setGravity(Gravity.CENTER);
+        android.widget.FrameLayout.LayoutParams hlp = new android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        hlp.bottomMargin = Du.dp(this, 120);
+        host.addView(hint, hlp);
+
+        FanGroup fan = new FanGroup(this, leftSide, actions.size());
+        for (int i = 0; i < actions.size(); i++) {
+            final GestureAction a = actions.get(i);
+            final String pkg = pkgs.get(i);
+            final int itemNo = i + 1;
+            fan.addView(fanButton(labels.get(i), v -> {
+                boolean ok = execute(a, pkg, true);
+                Log.i(TAG, "panel item=" + itemNo + " action=" + a.id + " ok=" + ok);
+                if (ok && prefs.vibrate() && immediateFeedback(a)) hapticOnce();
+                dismissPanel();
+            }));
+        }
+        host.addView(fan, new android.widget.FrameLayout.LayoutParams(-1, -1));
+
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | Gravity.LEFT;
+        lp.setTitle("OneHandActionPanel");
+        try {
+            wm.addView(host, lp);
+        } catch (Exception e) {
+            Log.w(TAG, "fan panel addView failed", e);
+            return;
+        }
+        panelView = host;
+        Motion.popIn(fan, leftSide);
+        main.removeCallbacks(dismissPanelRunnable);
+        main.postDelayed(dismissPanelRunnable, 15000);
+        Log.i(TAG, "panel shown mode=actions style=fan side=" + (leftSide ? "L" : "R")
+                + " n=" + actions.size());
+    }
+
+    private TextView fanButton(String label, View.OnClickListener click) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextSize(11.5f);
+        t.setLetterSpacing(-0.01f);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(Du.dp(this, 6), Du.dp(this, 4), Du.dp(this, 6), Du.dp(this, 4));
+        t.setMaxLines(2);
+        t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        t.setTextColor(UiKit.col(this, R.color.text_primary));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setColor(UiKit.col(this, R.color.card));
+        bg.setStroke(Du.dp(this, 1), UiKit.col(this, R.color.switch_off));
+        t.setBackground(bg);
+        t.setElevation(Du.dp(this, 10));
+        t.setContentDescription(label);
+        t.setOnClickListener(click);
+        return t;
+    }
+
+    /** 沿屏幕边缘的弧线排布按钮；条数越多半径越大，避免相互遮挡。 */
+    private class FanGroup extends android.view.ViewGroup {
+        private final boolean left;
+        private final int size;
+        private final float radius;
+        private final float spanDeg;
+
+        FanGroup(Context c, boolean leftSide, int count) {
+            super(c);
+            this.left = leftSide;
+            this.size = Du.dp(EdgeService.this, 64);
+            this.radius = Du.dp(EdgeService.this, 140 + 18 * Math.max(1, count));
+            this.spanDeg = Math.min(110f, 18f + 13f * Math.max(1, count));
+            setWillNotDraw(false);
+        }
+
+        @Override
+        protected void onMeasure(int widthSpec, int heightSpec) {
+            setMeasuredDimension(MeasureSpec.getSize(widthSpec), MeasureSpec.getSize(heightSpec));
+            int child = MeasureSpec.makeMeasureSpec(size, MeasureSpec.EXACTLY);
+            for (int i = 0; i < getChildCount(); i++) getChildAt(i).measure(child, child);
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            int w = getWidth();
+            float ax = left ? 0 : w;
+            float ay = getHeight() * 0.5f;
+            float rail = radius + size * 0.62f;
+            android.graphics.RectF oval = new android.graphics.RectF(
+                    ax - rail, ay - rail, ax + rail, ay + rail);
+            android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            paint.setStyle(android.graphics.Paint.Style.STROKE);
+            paint.setStrokeWidth(Du.dp(EdgeService.this, 1.5f));
+            paint.setColor(0x4DFFFFFF);
+            float start = left ? -spanDeg : 180f - spanDeg;
+            canvas.drawArc(oval, start, 2 * spanDeg, false, paint);
+        }
+
+        @Override
+        protected void onLayout(boolean changed, int l, int t, int r, int b) {
+            int n = getChildCount();
+            if (n == 0) return;
+            float ax = left ? 0 : (r - l);
+            float ay = (b - t) * 0.5f;
+            for (int i = 0; i < n; i++) {
+                float frac = n == 1 ? 0.5f : (float) i / (n - 1);
+                double angle = Math.toRadians(-spanDeg + 2 * spanDeg * frac);
+                float cx = (float) (ax + (left ? 1 : -1) * radius * Math.cos(angle));
+                float cy = (float) (ay + radius * Math.sin(angle));
+                View child = getChildAt(i);
+                child.layout(Math.round(cx - size / 2f), Math.round(cy - size / 2f),
+                        Math.round(cx + size / 2f), Math.round(cy + size / 2f));
+            }
         }
     }
 

@@ -147,7 +147,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override public void onBackPressed() {
-        if (!page.equals("手势") && !page.equals("面板") && !page.equals("设置")) navigate(page.startsWith("快速") ? "面板" : "设置");
+        if (!page.equals("手势") && !page.equals("面板") && !page.equals("设置")) navigate((page.startsWith("快速") || page.equals("动作面板")) ? "面板" : "设置");
         else super.onBackPressed();
     }
 
@@ -286,7 +286,7 @@ public class MainActivity extends AppCompatActivity {
         statusLine = null; statusAction = null; excludeCountTv = null; navbarSummaryTv = null;
         boolean topLevel = page.equals("手势") || page.equals("面板") || page.equals("设置");
         ((TextView) findViewById(R.id.toolbarTitle)).setText(page.equals("手势") ? "OneHandX" : topLevel ? page : "‹ " + page);
-        findViewById(R.id.toolbarTitle).setOnClickListener(topLevel ? null : v -> navigate(page.startsWith("快速") ? "面板" : "设置"));
+        findViewById(R.id.toolbarTitle).setOnClickListener(topLevel ? null : v -> navigate((page.startsWith("快速") || page.equals("动作面板")) ? "面板" : "设置"));
         findViewById(R.id.btnReset).setVisibility(page.equals("设置") ? View.VISIBLE : View.GONE);
         LinearLayout nav = findViewById(R.id.bottomNav);
         nav.removeAllViews();
@@ -323,6 +323,9 @@ public class MainActivity extends AppCompatActivity {
                 panels.addView(UiKit.subLabel(this, "把面板绑定到手势，即可随时从边缘唤出。"));
                 panels.addView(UiKit.clickRow(this, "快速工具", "配置亮度调节与常用动作按钮", v -> navigate("快速工具")));
                 panels.addView(UiKit.clickRow(this, "快速启动器", "固定常用应用，滑动后点按打开", v -> navigate("快速启动器")));
+                panels.addView(UiKit.clickRow(this, "动作面板",
+                        prefs.panelStyle() == 1 ? "扇形排布 · 按钮自定义" : "文件夹排布 · 按钮自定义",
+                        v -> navigate("动作面板")));
                 panels.addView(UiKit.clickRow(this, "虚拟触控板", "移动指针、点按与长按；在手柄中绑定动作", v -> panelHelp("虚拟触控板", "在任意手柄中选择「虚拟触控板」动作。唤出后滑动移动指针，点按点击，按住执行长按。")));
                 panels.addView(UiKit.clickRow(this, "浮动导航", "返回、主屏幕、最近任务", v -> panelHelp("浮动导航", "在手柄中绑定「浮动导航按钮」，执行后显示三键浮层。应用不会自动更改系统导航方式。")));
                 panels.addView(UiKit.clickRow(this, "应用历史", "仅包含服务观察到的应用", v -> panelHelp("应用历史", "在手柄中绑定「任务切换器」。列表来自本服务观察到的应用，不是完整的系统最近任务列表。")));
@@ -373,6 +376,7 @@ public class MainActivity extends AppCompatActivity {
                 root.addView(conflict); break;
             case "备份与高级设置": root.addView(enhancedCard()); break;
             case "快速工具": case "快速启动器": root.addView(quickPanelCard()); break;
+            case "动作面板": root.addView(actionPanelCard()); break;
         }
     }
 
@@ -602,6 +606,38 @@ public class MainActivity extends AppCompatActivity {
                 })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    private View actionPanelCard() {
+        LinearLayout c = UiKit.card(this);
+        c.addView(UiKit.segmentedTabs(this, new String[]{"文件夹", "扇形"}, prefs.panelStyle(), sel -> {
+            prefs.setPanelStyle(sel);
+            buildContent();
+        }));
+        c.addView(UiKit.subLabel(this, "把手势动作设为「动作面板」，从边缘滑动即可唤出；未配置的按钮不显示，最多 "
+                + Prefs.PANEL_SLOTS + " 个。"));
+        for (int i = 1; i <= Prefs.PANEL_SLOTS; i++) {
+            final int idx = i;
+            final String slot = prefs.panelSlot(idx);
+            c.addView(UiKit.clickRow(this, "按钮 " + idx, prefs.displayFor(slot), v ->
+                    ActionDialog.show(this, "动作面板 · 按钮 " + idx,
+                            prefs.actionId(slot),
+                            GestureAction.pickerWithoutPanels(),
+                            action -> {
+                                if (action.needsApp) {
+                                    Intent it = new Intent(this, AppPickerActivity.class);
+                                    it.putExtra(AppPickerActivity.EXTRA_SLOT, slot);
+                                    it.putExtra(AppPickerActivity.EXTRA_SLOT_NAME, "动作面板 · 按钮 " + idx);
+                                    startActivity(it);
+                                    Motion.openActivity(this);
+                                } else {
+                                    prefs.setSteps(slot, java.util.Collections.singletonList(
+                                            new Prefs.Step(action.id, null, null)));
+                                    buildContent();
+                                }
+                            })));
+        }
+        return c;
     }
 
     private View quickPanelCard() {
