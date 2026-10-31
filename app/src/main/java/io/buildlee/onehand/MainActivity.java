@@ -305,8 +305,9 @@ public class MainActivity extends AppCompatActivity {
         switch (page) {
             case "手势":
                 root.addView(topCard());
-                root.addView(UiKit.sectionHeader(this, "我的手势"));
+                root.addView(UiKit.sectionHeader(this, "初始设置"));
                 root.addView(setupCard());
+                root.addView(UiKit.sectionHeader(this, "我的手势"));
                 root.addView(handlesCard());
                 LinearLayout tryCard = UiKit.card(this);
                 tryCard.addView(UiKit.clickRow(this, "试用手势", "练习当前手柄动作，不执行系统操作", v -> {
@@ -418,7 +419,8 @@ public class MainActivity extends AppCompatActivity {
         });
         c.addView(statusRow);
 
-        c.addView(UiKit.switchRow(this, "启用 OneHandX", "总开关；关闭后全部手柄停止工作",
+        c.addView(UiKit.switchRow(this, "启用 OneHandX",
+                a11yOn() ? "总开关；关闭后全部手柄停止工作" : "总开关已开，但需先开启无障碍服务才会生效",
                 prefs.masterEnabled(), v -> prefs.setBool(Prefs.MASTER_ENABLED, v)));
         return c;
     }
@@ -427,7 +429,6 @@ public class MainActivity extends AppCompatActivity {
     /** 「初始设置」清单：参考 gulugulu 的首页结构，把必要授权集中在一张卡里。 */
     private View setupCard() {
         LinearLayout c = UiKit.card(this);
-        c.addView(UiKit.subLabel(this, "初始设置"));
         boolean a11y = a11yOn();
         c.addView(UiKit.clickRow(this, "无障碍服务",
                 a11y ? "已开启 · 手势服务运行中" : "未开启 · 点按前往系统设置",
@@ -438,7 +439,7 @@ public class MainActivity extends AppCompatActivity {
                 ignoring ? "已允许 · 后台更稳定" : "未允许 · 系统可能暂停手势服务",
                 v -> requestIgnoreBattery()));
         c.addView(UiKit.clickRow(this, "自启动 / 后台运行",
-                "ColorOS 等系统需在系统设置中手动允许，避免服务被清理",
+                "未设置 · 点按前往系统设置，允许后台运行",
                 v -> openAppDetails()));
         return c;
     }
@@ -545,7 +546,14 @@ public class MainActivity extends AppCompatActivity {
         texts.addView(t2);
         row.addView(texts);
 
-        TextView more = UiKit.pillButton(this, "⋯", v -> showGroupMenu(index));
+        TextView more = new TextView(this);
+        more.setText("⋯");
+        more.setTextSize(20);
+        more.setGravity(Gravity.CENTER);
+        more.setMinWidth(UiKit.dp(this, 44));
+        more.setMinHeight(UiKit.dp(this, 44));
+        more.setTextColor(UiKit.col(this, R.color.text_secondary));
+        more.setOnClickListener(v -> showGroupMenu(index));
         more.setContentDescription("手柄组 " + index + " 的更多操作");
         row.addView(more);
         row.setOnClickListener(v -> openHandle(Prefs.handleId("L", index)));
