@@ -165,7 +165,9 @@ public class Prefs {
     }
 
     public void setHandleCount(String side, int n) {
-        setInt("handle_count_" + side, Math.max(1, Math.min(MAX_HANDLES_PER_SIDE, n)));
+        int v = Math.max(1, Math.min(MAX_HANDLES_PER_SIDE, n));
+        sp.edit().putInt(GROUP_COUNT, v)
+                .putInt("handle_count_L", v).putInt("handle_count_R", v).apply();
     }
 
     public boolean handleEnabled(String id) { return getBool("h_" + id + "_enabled", true); }

@@ -39,6 +39,18 @@ final class ProductFlowChecks {
         prefs.setPriorityRequestedDp("L2", 0);
         check(prefs.priorityHeightDp("L1") + prefs.priorityHeightDp("L2") == 0, "all-zero allocation uses coexist mode");
         prefs.applyJson(beforeAllocation);
+        if (prefs.groupCount() < 2) prefs.addGroup();
+        int groups = prefs.groupCount();
+        check(groups == 2, "group model exposes paired handles");
+        prefs.copySideToOther(1, "L");
+        check(prefs.actionId("R1-S-H").equals(prefs.actionId("L1-S-H")), "copy side mirrors mapping");
+        prefs.setActionId("R1-S-H", "volume_down");
+        prefs.beginUndo("check");
+        prefs.deleteGroup(1);
+        check(prefs.groupCount() == groups - 1, "delete removes a whole group");
+        prefs.performUndo();
+        check(prefs.groupCount() == groups, "undo restores the deleted group");
+        check("volume_down".equals(prefs.actionId("R1-S-H")), "undo restores overrides");
         prefs.setBool(Prefs.REDUCE_MOTION, true);
         prefs.setBool(Prefs.LONG_ENABLED, false);
         prefs.setActionId("L1-S-H", "back");
@@ -48,7 +60,7 @@ final class ProductFlowChecks {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         test.waitForIdleSync(); waitForFocus(home);
         screenshot("product-home");
-        HandleEditActivity editor = (HandleEditActivity) next(home, "左手柄 1", HandleEditActivity.class);
+        HandleEditActivity editor = (HandleEditActivity) next(home, "手柄组 1", HandleEditActivity.class);
         assertText(editor, "短滑练习 · 不执行动作");
         assertText(editor, "短滑 · 向右上滑动");
         assertText(editor, "短滑 · 向右下滑动");
@@ -127,13 +139,17 @@ final class ProductFlowChecks {
         check(prefs.handlePos("L1") != originalPosition, "position control saves changes");
         int savedPosition = prefs.handlePos("L1");
         ui(editor::finish); test.waitForIdleSync();
-        HandleEditActivity reopened = (HandleEditActivity) next(home, "左手柄 1", HandleEditActivity.class);
+        HandleEditActivity reopened = (HandleEditActivity) next(home, "手柄组 1", HandleEditActivity.class);
         check(prefs.handlePos("L1") == savedPosition, "configuration survives closing and reopening editor");
         assertText(reopened, "动作配置");
         click(reopened, "进阶手势"); assertText(reopened, "原地长按");
         ui(reopened::finish); test.waitForIdleSync();
         prefs.setActionId("R1-S-H", "volume_down");
-        HandleEditActivity right = (HandleEditActivity) next(home, "右手柄 1", HandleEditActivity.class);
+        HandleEditActivity right = (HandleEditActivity) test.startActivitySync(
+                new Intent(test.getTargetContext(), HandleEditActivity.class)
+                        .putExtra(HandleEditActivity.EXTRA_HANDLE_ID, "R1")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        test.waitForIdleSync(); waitForFocus(right);
         swipe(right, false, 0, MotionEvent.ACTION_UP);
         assertText(right, "已识别 · 音量 -\n未执行系统动作");
         check("R1-S-H".equals(practice(right).lastSlot()), "right practice uses mirrored origin and right mapping");
