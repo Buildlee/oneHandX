@@ -47,7 +47,10 @@ public class SmokeInstrumentation extends Instrumentation {
                 }
                 EdgeService service = EdgeService.connectedService();
                 if (service == null || !service.isHandlePriorityGuardReady()) throw new IllegalStateException("guard did not arm");
-                Thread.sleep(2000); // Let real windows lay out, publish exclusions and complete a healthy pulse.
+                java.io.File request = new java.io.File(getTargetContext().getCacheDir(), "priority-stall-request");
+                until = android.os.SystemClock.elapsedRealtime() + 20000;
+                while (!request.exists() && android.os.SystemClock.elapsedRealtime() < until) Thread.sleep(100);
+                if (!request.delete()) throw new IllegalStateException("fault request missing; no stall injected");
                 runOnMainSync(() -> {
                     android.util.Log.i("OneHandPriorityTest", "main-thread-blocked");
                     android.os.SystemClock.sleep(30000);

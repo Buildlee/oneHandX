@@ -355,7 +355,7 @@ public class MainActivity extends AppCompatActivity {
                     conflict.addView(UiKit.subLabel(this, prefs.handlesSafetyPaused()
                             ? "全部手柄已安全暂停，原配置仍保留。可以重新开启实验，或选择下方的内移共存。"
                             : prefs.handlePriorityEnabled()
-                            ? "每侧手柄共享最多 200dp 高度，原长度和边距配置会保留。请试滑左右手柄，确认没有系统返回抢占。异常时独立守护会尝试退出此模式。"
+                            ? "每侧最多 200dp，默认优先主手柄。点按首页手柄，在「位置与外观」中调整接管高度和位置；其他手柄可选择共享额度或继续内移共存。"
                             : "实验模式不需要 Shizuku，不修改系统导航设置。启用后请验证手柄内的三方向滑动；兼容性依设备而异。"));
                 }
                 if (prefs.handlesSafetyPaused()) {

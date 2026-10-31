@@ -183,6 +183,24 @@ public class Prefs {
     public void setHandlePos(String id, int v) { setInt("h_" + id + "_pos", v); }
     public void setHandleAlpha(String id, int v) { setInt("h_" + id + "_alpha", v); }
 
+    /** Keep the primary handle usable by default; secondary handles can opt into sharing. */
+    public int priorityRequestedDp(String id) {
+        return Math.max(0, Math.min(200, getInt("h_" + id + "_priority_dp", id.endsWith("1") ? 200 : 0)));
+    }
+    public void setPriorityRequestedDp(String id, int value) {
+        setInt("h_" + id + "_priority_dp", Math.max(0, Math.min(200, value)));
+    }
+    public float priorityHeightDp(String id) {
+        if (!sideEnabled(id.substring(0, 1)) || !handleEnabled(id)) return 0;
+        int requested = priorityRequestedDp(id), total = 0;
+        String side = id.substring(0, 1);
+        for (int i = 1; i <= handleCount(side); i++) {
+            String other = handleId(side, i);
+            if (handleEnabled(other)) total += priorityRequestedDp(other);
+        }
+        return requested * Math.min(1f, 200f / Math.max(1, total));
+    }
+
     /** 删除手柄（仅允许删最后一个）：清掉它的属性与全部手势映射 */
     public void removeHandle(String id) {
         SharedPreferences.Editor e = sp.edit();
@@ -190,6 +208,7 @@ public class Prefs {
         e.remove("h_" + id + "_len");
         e.remove("h_" + id + "_pos");
         e.remove("h_" + id + "_alpha");
+        e.remove("h_" + id + "_priority_dp");
         for (String len : SLOT_LENS) {
             for (String dir : DIRS) {
                 String slot = slot(id, len, dir);

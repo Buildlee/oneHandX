@@ -132,7 +132,7 @@ public final class RecoveryActivity extends Activity {
         io.execute(() -> {
             // Cross-process SharedPreferences can be stale; recovery must never depend on that cache.
             boolean priorityStopped = false;
-            try { HandlePrioritySafety.pauseAndStopMain(getApplicationContext()); priorityStopped = true; }
+            try { HandlePrioritySafety.pauseForRecovery(getApplicationContext()); priorityStopped = true; }
             catch (Exception ignored) { }
             final boolean stopped = priorityStopped;
             final boolean priorityFailed = !priorityStopped;

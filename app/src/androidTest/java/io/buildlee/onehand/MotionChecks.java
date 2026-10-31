@@ -128,6 +128,16 @@ final class MotionChecks {
             check(completions.get() == 2, "reduced exit cleanup is immediate");
         });
         check(snapshot(feedback, "curve-reduced")[1] == 0, "reduced gesture returns immediately");
+        main(() -> {
+            EdgeHandleView cue = new EdgeHandleView(main, true);
+            cue.layout(0, 0, dp(main, 24), dp(main, 500));
+            int compact = paintedHeight(cue);
+            check(compact > 0 && compact < cue.getHeight() / 4, "coexist cue leaves most of the touch region visually clear");
+            cue.setPriority(true);
+            check(paintedHeight(cue) > cue.getHeight() * .8f, "priority cue marks its allocated area");
+            cue.setBaseAlpha(0); cue.setActive(true);
+            check(paintedHeight(cue) == 0, "hidden indicator stays hidden while dragging");
+        });
         main(() -> ((ViewGroup) fixture.getParent()).removeView(fixture));
 
         prefs.setBool(Prefs.REDUCE_MOTION, false);
@@ -242,4 +252,13 @@ final class MotionChecks {
         throw new AssertionError("animation did not settle");
     }
     private void check(boolean ok, String message) { if (!ok) throw new AssertionError(message); checks++; }
+    private int paintedHeight(View view) {
+        Bitmap bitmap = Bitmap.createBitmap(view.getWidth(), view.getHeight(), Bitmap.Config.ARGB_8888);
+        view.draw(new Canvas(bitmap));
+        int first = view.getHeight(), last = -1;
+        for (int y = 0; y < view.getHeight(); y++) for (int x = 0; x < view.getWidth(); x++) {
+            if ((bitmap.getPixel(x, y) >>> 24) != 0) { first = Math.min(first, y); last = Math.max(last, y); }
+        }
+        bitmap.recycle(); return Math.max(0, last - first + 1);
+    }
 }

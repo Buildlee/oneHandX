@@ -22,6 +22,7 @@ parser.add_argument(
     choices=[
         "normal",
         "multi",
+        "mixed",
         "manual",
         "stall",
         "guard_die",
@@ -148,10 +149,11 @@ def click_text(label):
     raise AssertionError("missing UI " + label)
 
 
-def gesture(side, direction, y):
+def gesture(side, direction, y, start_x=None):
     start = count()
     before = len(logs())
-    x, target = (0, 240) if side == "L" else (1079, 839)
+    x = (0 if side == "L" else 1079) if start_x is None else start_x
+    target = x + (240 if side == "L" else -240)
     dy = {"H": 0, "U": -300, "D": 300}[direction]
     sh("input", "swipe", str(x), str(y), str(target), str(y + dy), "400")
     # Software-rendered emulators may dispatch Back after the shell input command returns.
@@ -211,15 +213,30 @@ try:
     ]:
         ET.SubElement(fixture, "boolean", name=key, value=value)
     for side in ["L", "R"]:
-        total = 3 if scenario == "multi" else 1
+        total = 3 if scenario == "multi" else 2 if scenario == "mixed" else 1
         ET.SubElement(fixture, "int", name="handle_count_" + side, value=str(total))
         for i in range(1, total + 1):
             ET.SubElement(
                 fixture,
                 "int",
                 name="h_" + side + str(i) + "_pos",
-                value=str([10, 50, 90][i - 1] if total == 3 else 50),
+                value=str(
+                    [10, 50, 90][i - 1]
+                    if total == 3
+                    else 15 if scenario == "mixed" and i == 2 else 50
+                ),
             )
+            if scenario == "multi":
+                ET.SubElement(
+                    fixture,
+                    "int",
+                    name="h_" + side + str(i) + "_priority_dp",
+                    value="200",
+                )
+            if scenario == "normal":
+                ET.SubElement(
+                    fixture, "int", name="h_" + side + str(i) + "_len", value="1"
+                )
             for direction in ["H", "U", "D"]:
                 ET.SubElement(
                     fixture, "string", name="act_" + side + str(i) + "-S-" + direction
@@ -270,6 +287,7 @@ try:
             data=ET.tostring(fixture, encoding="utf-8", xml_declaration=True),
         )
     if scenario == "stall":
+        sh("run-as", PKG, "rm", "-f", "cache/priority-stall-request")
         sh("settings", "delete", "secure", "enabled_accessibility_services")
         instrument = subprocess.Popen(
             CMD
@@ -288,6 +306,7 @@ try:
             stderr=subprocess.STDOUT,
         )
         wait_log("waiting for priority guard")
+        sh("am", "start", "-W", "-n", PKG + "/.MainActivity")
         sh("am", "start", "-W", "-n", TEST + "/" + PKG + ".EdgeInputProbeActivity")
     if scenario != "stall":
         sh("am", "start", "-W", "-n", PKG + "/.MainActivity")
@@ -301,16 +320,25 @@ try:
     sh("settings", "put", "secure", "accessibility_enabled", "1")
     time.sleep(1.5)
     if scenario == "stall":
-        before = [
-            s.strip()
-            for s in sh("dumpsys", "window", "displays").splitlines()
-            if "mSystemGestureExclusion=" in s
-        ]
+        # Binding and the first WindowManager layout are asynchronous on a cold emulator.
+        deadline = time.monotonic() + 12
+        while True:
+            before = [
+                s.strip()
+                for s in sh("dumpsys", "window", "displays").splitlines()
+                if "mSystemGestureExclusion=" in s
+            ]
+            if before and "SkRegion()" not in before[0]:
+                break
+            if time.monotonic() >= deadline or "main-thread-blocked" in logs():
+                break
+            time.sleep(0.1)
         check(
             "exclusion_present_before_stall",
             bool(before) and "SkRegion()" not in before[0],
             regions=before,
         )
+        sh("run-as", PKG, "touch", "cache/priority-stall-request")
         wait_log("main-thread-blocked")
         start = time.monotonic()
         deadline = time.monotonic() + 8
@@ -374,6 +402,35 @@ try:
         regions=regions,
     )
     expected_regions = list(regions)
+    if scenario == "mixed":
+        for side in ["L", "R"]:
+            centers = {}
+            for i in [1, 2]:
+                attached = re.findall(
+                    r"handle attached id=" + side + str(i) + r" (\d+)x(\d+) y=(\d+)",
+                    logs(),
+                )
+                check("mixed_handle_attached_" + side + str(i), bool(attached))
+                width, height, top = map(int, attached[-1])
+                centers[i] = top + height // 2
+                if i == 1:
+                    check("mixed_primary_keeps_full_budget_" + side, height == 525)
+            emitted = gesture(side, "H", centers[1])
+            check(
+                "mixed_primary_receives_" + side,
+                "gesture slot=" + side + "1-S-H action=back ok=true" in emitted,
+            )
+            emitted = gesture(side, "H", centers[2])
+            check(
+                "mixed_secondary_edge_uses_system_" + side,
+                "gesture slot=" not in emitted,
+            )
+            emitted = gesture(side, "H", centers[2], 99 if side == "L" else 980)
+            check(
+                "mixed_secondary_inset_receives_" + side,
+                "gesture slot=" + side + "2-S-H action=back ok=true" in emitted,
+            )
+        raise SystemExit(0)
     if scenario == "sparse_moves":
         for side, x, target in [("L", 0, 240), ("R", 1079, 839)]:
             before = count()
@@ -456,6 +513,7 @@ try:
             )
         raise SystemExit(0)
     if scenario == "manual" or scenario.startswith("resume_ui"):
+        main_pid_before = sh("pidof", PKG)
         sh("am", "start", "-W", "-n", PKG + "/.RecoveryActivity")
         time.sleep(0.5)
         assert_recovery_foreground()
@@ -495,6 +553,10 @@ try:
                 CMD + ["shell", "run-as", PKG, "test", "-f", PAUSE], env=ENV
             ).returncode
             == 0,
+        )
+        check(
+            "manual_recovery_keeps_accessibility_process",
+            sh("pidof", PKG) == main_pid_before,
         )
         (ROOT / "manual-recovery.png").write_bytes(adb("exec-out", "screencap", "-p"))
         sh("am", "start", "-W", "-n", TEST + "/" + PKG + ".EdgeInputProbeActivity")
@@ -563,6 +625,11 @@ try:
                     in emitted,
                 )
         check("total_height_limited_" + side, sum(heights) <= 525, heights=heights)
+        if scenario == "normal":
+            check(
+                "priority_height_independent_of_coexist_length_" + side,
+                heights == [525],
+            )
     for side in ["L", "R"]:
         emitted = gesture(side, "H", 100 if scenario == "multi" else 250)
         check("outside_handle_uses_system_" + side, "gesture slot=" not in emitted)
@@ -592,6 +659,7 @@ finally:
         instrument.communicate(timeout=8)
     sh("am", "force-stop", PKG)
     sh("am", "force-stop", TEST)
+    sh("run-as", PKG, "rm", "-f", "cache/priority-stall-request")
     adb("shell", "run-as", PKG, "tee", "shared_prefs/onehand.xml", data=prefs)
     sh("run-as", PKG, "rm", "-f", PAUSE, PAUSE + ".bak", PAUSE + ".new")
     if marker is not None:

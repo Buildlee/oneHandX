@@ -21,6 +21,10 @@ public class EdgeHandleView extends View {
     private int baseAlpha = 115;
     private int color = 0xFFFFFFFF;
     private int animColor = 0xFFFFFFFF;
+    private boolean priority;
+
+    public void setPriority(boolean value) { priority = value; invalidate(); }
+    public boolean isPriority() { return priority; }
 
     private float activeAmt = 0f;
     private float hotAmt = 0f;
@@ -87,11 +91,11 @@ public class EdgeHandleView extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         float w = getWidth(), h = getHeight();
-        if (w <= 0 || h <= 0) return;
+        if (w <= 0 || h <= 0 || baseAlpha == 0) return;
 
-        float barW = Math.max(w * 0.16f, dp(3));
-        float barH = h * 0.94f;
-        float x = leftSide ? w * 0.18f : w * 0.82f - barW;
+        float barW = dp(priority ? 2f : 1.5f);
+        float barH = priority ? h * 0.90f : Math.min(h, dp(32f + 8f * activeAmt));
+        float x = leftSide ? dp(1) : w - dp(1) - barW;
         float top = (h - barH) / 2f;
         float rad = barW / 2f;
 
@@ -106,7 +110,8 @@ public class EdgeHandleView extends View {
                     rad + dp(2), rad + dp(2), glowPaint);
         }
 
-        int alpha = Math.min(255, baseAlpha + (int) (activeAmt * 80) + (int) (hotAmt * 60));
+        int alpha = Math.min(255, Math.round(baseAlpha * (priority ? 1f : .55f))
+                + (int) (activeAmt * 80) + (int) (hotAmt * 60));
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(ColorUtils.blendARGB(color, animColor,
                 Math.min(0.55f, 0.25f * activeAmt + 0.45f * hotAmt)));

@@ -63,7 +63,7 @@ public class HandleEditActivity extends AppCompatActivity {
     private void build(LinearLayout root) {
         LinearLayout c1 = UiKit.card(this);
         c1.addView(UiKit.switchRow(this, "启用此手柄", null, prefs.handleEnabled(handleId),
-                v -> prefs.setHandleEnabled(handleId, v)));
+                v -> { prefs.setHandleEnabled(handleId, v); rebuild(); }));
         c1.addView(UiKit.subLabel(this, "短滑练习 · 不执行动作"));
         practice = new GesturePracticeView(this, handleId);
         c1.addView(practice, new LinearLayout.LayoutParams(-1, UiKit.dp(this, 156)));
@@ -104,14 +104,23 @@ public class HandleEditActivity extends AppCompatActivity {
 
         LinearLayout c3 = UiKit.card(this);
         c3.addView(UiKit.subLabel(this, "尺寸与位置"));
+        LinearLayout coexist = new LinearLayout(this);
+        coexist.setOrientation(LinearLayout.VERTICAL);
         if (prefs.handlePriorityEnabled()) {
-            c3.addView(UiKit.subLabel(this, "手柄优先模式已贴边，每侧总高度最多 200dp。常规长度 " + prefs.handleLen(handleId)
-                    + "% 和边距 " + prefs.handleMarginDp() + "dp 已保留，关闭实验模式后可继续调整。"));
-        } else {
-            c3.addView(UiKit.sliderRow(this, "距屏幕边缘", 4, 80, prefs.handleMarginDp(), "dp", prefs::setHandleMarginDp));
-            c3.addView(UiKit.subLabel(this, "最外侧留给系统返回，26dp 是建议起点；仍有冲突时增加边距并试滑。不同手机的系统热区不同。"));
-            c3.addView(UiKit.sliderRow(this, "长度", 30, 95, prefs.handleLen(handleId), "%", this::setLen));
+            TextView allocation = UiKit.subLabel(this, prioritySummary());
+            c3.addView(UiKit.sliderRow(this, "接管高度", 0, 200, prefs.priorityRequestedDp(handleId), "dp", value -> {
+                prefs.setPriorityRequestedDp(handleId, value);
+                if (prefs.syncHandles()) prefs.setPriorityRequestedDp(mirrorId(), value);
+                allocation.setText(prioritySummary());
+                coexist.setVisibility(prefs.priorityHeightDp(handleId) > 0 ? View.GONE : View.VISIBLE);
+            }));
+            c3.addView(allocation);
         }
+        coexist.addView(UiKit.sliderRow(this, "距屏幕边缘", 4, 80, prefs.handleMarginDp(), "dp", prefs::setHandleMarginDp));
+        coexist.addView(UiKit.subLabel(this, "最外侧留给系统返回；短指示条只标记起点，触摸范围仍由长度决定。"));
+        coexist.addView(UiKit.sliderRow(this, "长度", 30, 95, prefs.handleLen(handleId), "%", this::setLen));
+        coexist.setVisibility(prefs.handlePriorityEnabled() && prefs.priorityHeightDp(handleId) > 0 ? View.GONE : View.VISIBLE);
+        c3.addView(coexist);
         c3.addView(UiKit.subLabel(this, "外观"));
         c3.addView(UiKit.sliderRow(this, "垂直位置", 0, 100, prefs.handlePos(handleId), "%",
                 this::setPos));
@@ -206,6 +215,11 @@ public class HandleEditActivity extends AppCompatActivity {
 
     private String mirrorId() {
         return (handleId.startsWith("L") ? "R" : "L") + handleId.substring(1);
+    }
+
+    private String prioritySummary() {
+        return "当前分配约 " + Math.round(prefs.priorityHeightDp(handleId))
+                + "dp。每侧总计最多 200dp，多手柄按设定比例共享；设为 0 时，此手柄使用内移共存。";
     }
 
     private String lenName(String len) {

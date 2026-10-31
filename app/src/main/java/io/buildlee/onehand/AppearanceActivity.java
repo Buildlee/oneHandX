@@ -148,7 +148,7 @@ public class AppearanceActivity extends AppCompatActivity {
         controls.addView(UiKit.sectionHeader(this, "手柄指示条"));
         LinearLayout handle = UiKit.card(this);
         handle.addView(UiKit.sliderRow(this, "手柄宽度", 8, 48, prefs.handleWidthDp(), "dp", v -> prefs.setInt(Prefs.HANDLE_WIDTH_DP, v)));
-        handle.addView(UiKit.switchRow(this, "显示指示条", "隐藏后仍可从原来的手柄位置滑动", prefs.showIndicator(), v -> prefs.setBool(Prefs.SHOW_INDICATOR, v)));
+        handle.addView(UiKit.switchRow(this, "显示指示条", "共存时为短胶囊，仅标记起点；隐藏后仍可滑动", prefs.showIndicator(), v -> prefs.setBool(Prefs.SHOW_INDICATOR, v)));
         handle.addView(UiKit.clickRow(this, "手柄颜色", Prefs.COLOR_NAMES[prefs.handleColorIndex()], v ->
                 new AlertDialog.Builder(this).setTitle("手柄颜色")
                         .setSingleChoiceItems(Prefs.COLOR_NAMES, prefs.handleColorIndex(), (d, which) -> {

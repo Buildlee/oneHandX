@@ -25,6 +25,20 @@ final class ProductFlowChecks {
     }
 
     int run() throws Exception {
+        String beforeAllocation = prefs.dumpJson();
+        prefs.setSideEnabled("L", true); prefs.setHandleCount("L", 2);
+        prefs.setHandleEnabled("L1", true); prefs.setHandleEnabled("L2", true);
+        prefs.setPriorityRequestedDp("L1", 200); prefs.setPriorityRequestedDp("L2", 0);
+        check(prefs.priorityHeightDp("L1") == 200 && prefs.priorityHeightDp("L2") == 0,
+                "primary gets full budget while secondary coexists");
+        prefs.setPriorityRequestedDp("L2", 200);
+        check(prefs.priorityHeightDp("L1") == 100 && prefs.priorityHeightDp("L2") == 100,
+                "explicit equal requests share the side budget");
+        prefs.setHandleEnabled("L1", false);
+        check(prefs.priorityHeightDp("L2") == 200, "disabled handles do not consume priority budget");
+        prefs.setPriorityRequestedDp("L2", 0);
+        check(prefs.priorityHeightDp("L1") + prefs.priorityHeightDp("L2") == 0, "all-zero allocation uses coexist mode");
+        prefs.applyJson(beforeAllocation);
         prefs.setBool(Prefs.REDUCE_MOTION, true);
         prefs.setBool(Prefs.LONG_ENABLED, false);
         prefs.setActionId("L1-S-H", "back");
