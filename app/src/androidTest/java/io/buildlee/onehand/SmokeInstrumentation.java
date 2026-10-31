@@ -27,11 +27,32 @@ public class SmokeInstrumentation extends Instrumentation {
     private boolean holdGuard;
     private boolean guardTransactions;
     private boolean guardStress;
+    private boolean priorityStall;
 
-    @Override public void onCreate(Bundle args) { super.onCreate(args); theme = Integer.parseInt(args.getString("theme", "1")); motionMode = args.getString("motion", "false").equals("true"); recoveryMode = args.getString("recovery", "false").equals("true"); shizukuMode = args.getString("shizuku", "false").equals("true"); holdGuard = args.getString("holdGuard", "false").equals("true"); guardTransactions = args.getString("guardTransactions", "false").equals("true"); guardStress = args.getString("guardStress", "false").equals("true"); start(); }
+    @Override public void onCreate(Bundle args) { super.onCreate(args); theme = Integer.parseInt(args.getString("theme", "1")); motionMode = args.getString("motion", "false").equals("true"); recoveryMode = args.getString("recovery", "false").equals("true"); shizukuMode = args.getString("shizuku", "false").equals("true"); holdGuard = args.getString("holdGuard", "false").equals("true"); guardTransactions = args.getString("guardTransactions", "false").equals("true"); guardStress = args.getString("guardStress", "false").equals("true"); priorityStall = args.getString("priorityStall", "false").equals("true"); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            if (priorityStall) {
+                if (!(android.os.Build.HARDWARE.contains("ranchu") || android.os.Build.HARDWARE.contains("goldfish"))) {
+                    throw new IllegalStateException("Main-thread stall injection is restricted to an emulator");
+                }
+                android.util.Log.i("OneHandPriorityTest", "waiting for priority guard");
+                long until = android.os.SystemClock.elapsedRealtime() + 15000;
+                while (android.os.SystemClock.elapsedRealtime() < until) {
+                    EdgeService service = EdgeService.connectedService();
+                    if (service != null && service.isHandlePriorityGuardReady()) break;
+                    Thread.sleep(100);
+                }
+                EdgeService service = EdgeService.connectedService();
+                if (service == null || !service.isHandlePriorityGuardReady()) throw new IllegalStateException("guard did not arm");
+                Thread.sleep(2000); // Let real windows lay out, publish exclusions and complete a healthy pulse.
+                runOnMainSync(() -> {
+                    android.util.Log.i("OneHandPriorityTest", "main-thread-blocked");
+                    android.os.SystemClock.sleep(30000);
+                });
+                throw new IllegalStateException("guard failed to stop the stalled process");
+            }
             if (shizukuMode) {
                 int count = new ShizukuChecks(this, holdGuard, guardTransactions, guardStress).run();
                 result.putString("stream", "PASS: " + count + " Shizuku checks\n"); finish(Activity.RESULT_OK, result); return;

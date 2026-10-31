@@ -29,6 +29,7 @@ public class Prefs {
     public static final String PAUSE_KEYBOARD = "pause_keyboard";   // v0.3 遗留，仅迁移用
     public static final String HIDE_NAVBAR = "hide_navbar";
     public static final String HANDLE_MARGIN_DP = "handle_margin_dp";
+    public static final String HANDLE_PRIORITY = "handle_priority";
 
     // v0.4：对齐 One Hand Operation+ 的参数
     public static final String ANGLE_DEG = "angle_deg";
@@ -212,6 +213,17 @@ public class Prefs {
     public int handleMarginDp() { return Math.max(2, Math.min(90, getInt(HANDLE_MARGIN_DP, DEF_MARGIN_DP))); }
 
     public void setHandleMarginDp(int v) { setInt(HANDLE_MARGIN_DP, Math.max(2, Math.min(90, v))); }
+    public boolean handlePriorityEnabled() {
+        return android.os.Build.VERSION.SDK_INT >= 29 && getBool(HANDLE_PRIORITY, false) && !HandlePrioritySafety.isPaused(ctx);
+    }
+    public boolean setHandlePriorityEnabled(boolean enabled) {
+        if (!HandlePrioritySafety.clearPause(ctx)) return false;
+        setBool(HANDLE_PRIORITY, enabled);
+        EdgeService service = EdgeService.connectedService();
+        if (service != null) service.refreshPriorityMode();
+        return true;
+    }
+    public boolean handlesSafetyPaused() { return HandlePrioritySafety.isPaused(ctx); }
     public boolean showIndicator() { return getBool(SHOW_INDICATOR, true); }
     public boolean vibrate() { return getBool(VIBRATE, true); }
     public boolean longHint() { return getBool(LONG_HINT, true); }
@@ -435,7 +447,7 @@ public class Prefs {
         if (key.startsWith("handle_count_")) return "i";
         for (String name : new String[]{MASTER_ENABLED, LEFT_ENABLED, RIGHT_ENABLED, SHOW_INDICATOR,
                 VIBRATE, LONG_HINT, LANDSCAPE_ENABLED, PAUSE_KEYBOARD, HIDE_NAVBAR, QUICK_VIBRATE,
-                INSTANT_SHORT, INSTANT_LONG, LONG_ENABLED, HIDE_ON_HOME, SYNC_HANDLES, REDUCE_MOTION})
+                INSTANT_SHORT, INSTANT_LONG, LONG_ENABLED, HIDE_ON_HOME, SYNC_HANDLES, REDUCE_MOTION, HANDLE_PRIORITY})
             if (key.equals(name)) return "b";
         for (String name : new String[]{MODEL, HANDLE_WIDTH_DP, SHORT_TRIGGER_DP, LONG_TRIGGER_DP,
                 HOLD_MS, HANDLE_MARGIN_DP, ANGLE_DEG, VIBRATE_AMP, LONG_HOLD_MS, ANIM_STYLE,

@@ -43,6 +43,8 @@
             android:name=".RecoveryActivity"
             android:label="恢复系统手势"
             android:process=":recovery"
+            android:taskAffinity="${applicationId}.recovery"
+            android:launchMode="singleTask"
             android:theme="@android:style/Theme.Material.Light.NoActionBar"
             android:exported="true">
             <intent-filter>
@@ -54,6 +56,9 @@
         <activity android:name=".TakeoverActivity"
             android:enableOnBackInvokedCallback="false"
             android:exported="false" />
+
+        <service android:name=".HandlePriorityGuardService"
+            android:process=":recovery" android:exported="false" />
 
         <receiver android:name=".RecoveryReceiver"
             android:process=":recovery"

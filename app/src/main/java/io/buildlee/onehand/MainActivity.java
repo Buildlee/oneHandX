@@ -172,7 +172,10 @@ public class MainActivity extends AppCompatActivity {
 
     private void refreshStatus() {
         if (statusLine == null) return;
-        if (a11yOn() && prefs.masterEnabled()) {
+        if (prefs.handlesSafetyPaused()) {
+            statusLine.setText("已安全暂停 · 在系统手势共存中选择继续方式");
+            if (statusAction != null) statusAction.setText("检查");
+        } else if (a11yOn() && prefs.masterEnabled()) {
             statusLine.setText("运行中 · 从已启用的手柄向内滑动");
             if (statusAction != null) statusAction.setText("已开启");
         } else if (a11yOn()) {
@@ -325,9 +328,26 @@ public class MainActivity extends AppCompatActivity {
                 root.addView(sceneCard()); break;
             case "系统手势共存":
                 LinearLayout conflict = UiKit.card(this);
-                conflict.addView(UiKit.subLabel(this, "最外侧留给系统返回，从内移后的手柄起滑。先在此调整，再回到手势页试用。不同手机的热区宽度不同，26dp 是起始建议。"));
-                conflict.addView(UiKit.sliderRow(this, "距屏幕边缘", 4, 80, prefs.handleMarginDp(), "dp", prefs::setHandleMarginDp));
-                conflict.addView(UiKit.subLabel(this, "普通应用无法可靠接管所有手机的系统手势。需要完全贴边时，可自行在系统中选择三键导航，再使用浮动导航；本应用不会自动切换。"));
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    conflict.addView(UiKit.switchRow(this, "手柄优先（实验）", "手柄贴边，范围外保留系统返回", prefs.handlePriorityEnabled(), enabled -> {
+                        if (!prefs.setHandlePriorityEnabled(enabled)) Toast.makeText(this, "暂时无法解除安全暂停，请稍后重试", Toast.LENGTH_LONG).show();
+                        buildContent(); refreshAll();
+                    }));
+                    conflict.addView(UiKit.subLabel(this, prefs.handlesSafetyPaused()
+                            ? "全部手柄已安全暂停，原配置仍保留。可以重新开启实验，或选择下方的内移共存。"
+                            : prefs.handlePriorityEnabled()
+                            ? "每侧手柄共享最多 200dp 高度，原长度和边距配置会保留。请试滑左右手柄，确认没有系统返回抢占。异常时独立守护会尝试退出此模式。"
+                            : "实验模式不需要 Shizuku，不修改系统导航设置。启用后请验证手柄内的三方向滑动；兼容性依设备而异。"));
+                }
+                if (prefs.handlesSafetyPaused()) {
+                    conflict.addView(UiKit.clickRow(this, "使用内移共存", "恢复原有长度和边距", v -> {
+                        prefs.setHandlePriorityEnabled(false); buildContent(); refreshAll();
+                    }));
+                } else if (!prefs.handlePriorityEnabled()) {
+                    conflict.addView(UiKit.subLabel(this, "最外侧留给系统返回，从内移后的手柄起滑。先在此调整，再回到手势页试用。不同手机的热区宽度不同，26dp 是起始建议。"));
+                    conflict.addView(UiKit.sliderRow(this, "距屏幕边缘", 4, 80, prefs.handleMarginDp(), "dp", prefs::setHandleMarginDp));
+                }
+                conflict.addView(UiKit.subLabel(this, "此模式仅申请手柄覆盖的区域，不接管整条屏幕侧边。若设备不接受申请，可关闭实验模式，继续使用内移共存。"));
                 root.addView(conflict); break;
             case "备份与高级设置": root.addView(enhancedCard()); break;
             case "快速工具": case "快速启动器": root.addView(quickPanelCard()); break;
@@ -371,7 +391,9 @@ public class MainActivity extends AppCompatActivity {
         statusAction.setPadding(UiKit.dp(this, 8), 0, 0, 0);
         statusRow.addView(statusAction);
         statusRow.addView(UiKit.chevron(this));
-        statusRow.setOnClickListener(v -> openA11ySettings());
+        statusRow.setOnClickListener(v -> {
+            if (prefs.handlesSafetyPaused()) navigate("系统手势共存"); else openA11ySettings();
+        });
         c.addView(statusRow);
 
         c.addView(UiKit.switchRow(this, "启用 OneHandX", "总开关；关闭后全部手柄停止工作",

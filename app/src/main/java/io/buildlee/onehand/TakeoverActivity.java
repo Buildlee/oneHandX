@@ -149,6 +149,8 @@ public final class TakeoverActivity extends Activity {
     private void requestStart() {
         Log.i("OneHandTakeover", "request start recovery=" + recoveryConfirmed.isChecked() + " back=" + backVerified + " navigation=" + navigationVerified());
         if (!emulatorDebug()) { status.setText("当前只允许在调试模拟器中试用。"); return; }
+        if (new Prefs(this).handlesSafetyPaused()) { status.setText("请先在系统手势共存中结束安全暂停，再进行接管实验。"); return; }
+        if (new Prefs(this).handlePriorityEnabled()) { status.setText("请先关闭手柄优先模式，再进行全高接管实验。"); return; }
         if (!recoveryConfirmed.isChecked() || !backVerified || !navigationVerified()) {
             status.setText("请确认恢复入口、测试返回，并使用双侧手势导航。"); return;
         }

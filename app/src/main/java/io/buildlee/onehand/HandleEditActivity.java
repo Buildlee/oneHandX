@@ -97,12 +97,15 @@ public class HandleEditActivity extends AppCompatActivity {
 
         LinearLayout c3 = UiKit.card(this);
         c3.addView(UiKit.subLabel(this, "尺寸与位置"));
-        c3.addView(UiKit.sliderRow(this, "距屏幕边缘", 4, 80, prefs.handleMarginDp(), "dp",
-                v -> prefs.setHandleMarginDp(v)));
-        c3.addView(UiKit.subLabel(this, "最外侧留给系统返回，26dp 是建议起点；仍有冲突时增加边距并试滑。不同手机的系统热区不同。"));
+        if (prefs.handlePriorityEnabled()) {
+            c3.addView(UiKit.subLabel(this, "手柄优先模式已贴边，每侧总高度最多 200dp。常规长度 " + prefs.handleLen(handleId)
+                    + "% 和边距 " + prefs.handleMarginDp() + "dp 已保留，关闭实验模式后可继续调整。"));
+        } else {
+            c3.addView(UiKit.sliderRow(this, "距屏幕边缘", 4, 80, prefs.handleMarginDp(), "dp", prefs::setHandleMarginDp));
+            c3.addView(UiKit.subLabel(this, "最外侧留给系统返回，26dp 是建议起点；仍有冲突时增加边距并试滑。不同手机的系统热区不同。"));
+            c3.addView(UiKit.sliderRow(this, "长度", 30, 95, prefs.handleLen(handleId), "%", this::setLen));
+        }
         c3.addView(UiKit.subLabel(this, "外观"));
-        c3.addView(UiKit.sliderRow(this, "长度", 30, 95, prefs.handleLen(handleId), "%",
-                this::setLen));
         c3.addView(UiKit.sliderRow(this, "垂直位置", 0, 100, prefs.handlePos(handleId), "%",
                 this::setPos));
         c3.addView(UiKit.sliderRow(this, "不透明度", 0, 100, prefs.handleAlpha(handleId), "%",

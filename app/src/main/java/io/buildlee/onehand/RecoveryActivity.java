@@ -66,7 +66,7 @@ public final class RecoveryActivity extends Activity {
         content.addView(title, titleParams);
 
         TextView description = new TextView(this);
-        description.setText("如果边缘手势不能使用，可以在这里恢复接管前的系统设置。只有点击按钮后才会执行恢复。");
+        description.setText("如果边缘手势不能使用，可以在这里停用实验手柄并恢复接管前的系统设置。只有点击按钮后才会执行恢复。");
         description.setTextSize(16);
         description.setTextColor(dark ? Color.rgb(177, 196, 189) : Color.rgb(79, 94, 104));
         description.setLineSpacing(dp(5), 1f);
@@ -103,6 +103,14 @@ public final class RecoveryActivity extends Activity {
         content.addView(restore, buttonParams);
         restore.setOnClickListener(v -> doRestore());
         setContentView(scroll);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        refreshStatus();
+    }
+
+    private void refreshStatus() {
         restore.setEnabled(false);
         io.execute(() -> {
             LocalRecovery.Status current = new LocalRecovery(getApplicationContext()).inspect();
@@ -122,6 +130,12 @@ public final class RecoveryActivity extends Activity {
         restore.setEnabled(false);
         status.setText("正在检查并恢复原始设置…");
         io.execute(() -> {
+            // Cross-process SharedPreferences can be stale; recovery must never depend on that cache.
+            boolean priorityStopped = false;
+            try { HandlePrioritySafety.pauseAndStopMain(getApplicationContext()); priorityStopped = true; }
+            catch (Exception ignored) { }
+            final boolean stopped = priorityStopped;
+            final boolean priorityFailed = !priorityStopped;
             LocalRecovery.Result result = new LocalRecovery(getApplicationContext()).restore();
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
@@ -130,16 +144,18 @@ public final class RecoveryActivity extends Activity {
                         status.setText("原始设置已还原。请从左右屏幕边缘滑动，确认系统返回手势可用。");
                         break;
                     case NO_RECORD:
-                        status.setText("没有待恢复的接管记录；系统设置未修改。");
+                        status.setText(stopped ? "手柄已安全暂停；没有待恢复的系统设置记录。请从左右边缘滑动确认返回可用。"
+                                : priorityFailed ? "手柄暂停未完成，请在系统中停止 OneHandX 后重试。系统接管记录为空。"
+                                : "没有待恢复的接管记录；系统设置未修改。");
                         break;
                     case CONFLICT:
                         status.setText("系统设置已发生变化，冲突值未被覆盖，其余可恢复的一侧已尝试还原。请检查系统导航设置。");
                         break;
                     case NEEDS_PERMISSION:
-                        status.setText("缺少恢复系统设置的权限。请重新授权或使用电脑按备份资料恢复。");
+                        status.setText((stopped ? "实验手柄已停用。" : "") + "缺少恢复系统设置的权限。请重新授权或使用电脑按备份资料恢复。");
                         break;
                     default:
-                        status.setText("恢复未完成，原始记录已保留。请检查权限和恢复资料后重试。");
+                        status.setText((stopped ? "实验手柄已停用。" : "") + "恢复未完成，原始记录已保留。请检查权限和恢复资料后重试。");
                 }
                 restore.setEnabled(true);
             });
