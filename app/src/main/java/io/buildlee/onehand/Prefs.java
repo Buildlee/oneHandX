@@ -74,9 +74,11 @@ public class Prefs {
     public static final String[] LENGTHS = {"S", "L"};
     /** 手势槽位的长度维度：短滑 / 长滑 / 滑动保持 */
     public static final String[] SLOT_LENS = {"S", "L", "H"};
-    public static final String[] DIRS = {"H", "U", "D"};
+    public static final String[] DIRS = {"H", "U", "D", "VU", "VD"};
     public static final String LEN_HOLD = "H";
     public static final String PRESS = "P";
+    public static final String CLICK = "C";
+    public static final String DOUBLE = "W";
     public static final int MAX_HANDLES_PER_SIDE = 3;
 
     public static final int DEF_WIDTH_DP = 24;
@@ -452,6 +454,10 @@ public class Prefs {
     public static String pressSlot(String handleId) {
         return handleId + "-" + PRESS;
     }
+
+    public static String clickSlot(String handleId) { return handleId + "-" + CLICK; }
+
+    public static String doubleSlot(String handleId) { return handleId + "-" + DOUBLE; }
 
     private String defaultAction(String slot) {
         if (slot.endsWith("-S-H")) return GestureAction.BACK.id;

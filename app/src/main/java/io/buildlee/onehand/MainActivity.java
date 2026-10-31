@@ -306,6 +306,7 @@ public class MainActivity extends AppCompatActivity {
             case "手势":
                 root.addView(topCard());
                 root.addView(UiKit.sectionHeader(this, "我的手势"));
+                root.addView(setupCard());
                 root.addView(handlesCard());
                 LinearLayout tryCard = UiKit.card(this);
                 tryCard.addView(UiKit.clickRow(this, "试用手势", "练习当前手柄动作，不执行系统操作", v -> {
@@ -420,6 +421,49 @@ public class MainActivity extends AppCompatActivity {
         c.addView(UiKit.switchRow(this, "启用 OneHandX", "总开关；关闭后全部手柄停止工作",
                 prefs.masterEnabled(), v -> prefs.setBool(Prefs.MASTER_ENABLED, v)));
         return c;
+    }
+
+
+    /** 「初始设置」清单：参考 gulugulu 的首页结构，把必要授权集中在一张卡里。 */
+    private View setupCard() {
+        LinearLayout c = UiKit.card(this);
+        c.addView(UiKit.subLabel(this, "初始设置"));
+        boolean a11y = a11yOn();
+        c.addView(UiKit.clickRow(this, "无障碍服务",
+                a11y ? "已开启 · 手势服务运行中" : "未开启 · 点按前往系统设置",
+                v -> openA11ySettings()));
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        boolean ignoring = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
+        c.addView(UiKit.clickRow(this, "忽略电池优化",
+                ignoring ? "已允许 · 后台更稳定" : "未允许 · 系统可能暂停手势服务",
+                v -> requestIgnoreBattery()));
+        c.addView(UiKit.clickRow(this, "自启动 / 后台运行",
+                "ColorOS 等系统需在系统设置中手动允许，避免服务被清理",
+                v -> openAppDetails()));
+        return c;
+    }
+
+    private void requestIgnoreBattery() {
+        try {
+            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            i.setData(android.net.Uri.parse("package:" + getPackageName()));
+            startActivity(i);
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+            } catch (Exception ignored) {
+                Toast.makeText(this, "无法打开电池优化设置", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void openAppDetails() {
+        try {
+            startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:" + getPackageName())));
+        } catch (Exception e) {
+            Toast.makeText(this, "无法打开应用设置", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private View handlesCard() {

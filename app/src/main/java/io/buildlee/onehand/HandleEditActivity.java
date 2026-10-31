@@ -90,11 +90,15 @@ public class HandleEditActivity extends AppCompatActivity {
         }));
         if (selectedLength.equals("L")) c2.addView(UiKit.switchRow(this, "启用长滑", "同时对所有手柄生效", prefs.longEnabled(),
                 enabled -> prefs.setBool(Prefs.LONG_ENABLED, enabled)));
-        for (String dir : new String[]{"U", "H", "D"}) c2.addView(gestureRow(selectedLength, dir));
+        for (String dir : new String[]{"U", "H", "D", "VU", "VD"}) c2.addView(gestureRow(selectedLength, dir));
         if (selectedLength.equals("L")) c2.addView(UiKit.subLabel(this, "未配置长滑时使用对应短滑动作；长滑总开关在设置 → 手势识别。"));
         LinearLayout advancedRows = new LinearLayout(this); advancedRows.setOrientation(LinearLayout.VERTICAL);
-        for (String dir : new String[]{"U", "H", "D"}) advancedRows.addView(gestureRow("H", dir));
+        for (String dir : new String[]{"U", "H", "D", "VU", "VD"}) advancedRows.addView(gestureRow("H", dir));
         advancedRows.addView(slotRowFor(Prefs.pressSlot(handleId), "原地长按", 0));
+        if (selectedLength.equals("S")) {
+            c2.addView(slotRowFor(Prefs.clickSlot(handleId), "单击（不滑动）", 0));
+            c2.addView(slotRowFor(Prefs.doubleSlot(handleId), "双击（不滑动）", 0));
+        }
         advancedRows.setVisibility(advanced ? View.VISIBLE : View.GONE);
         advancedRows.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
             public void onViewAttachedToWindow(View view) {}
@@ -222,6 +226,8 @@ public class HandleEditActivity extends AppCompatActivity {
         String inward = handleId.startsWith("L") ? "右" : "左";
         if ("U".equals(dir)) return "向" + inward + "上滑动";
         if ("D".equals(dir)) return "向" + inward + "下滑动";
+        if ("VU".equals(dir)) return "向上滑动";
+        if ("VD".equals(dir)) return "向下滑动";
         return "向" + inward + "滑动";
     }
 
@@ -253,6 +259,8 @@ public class HandleEditActivity extends AppCompatActivity {
     private int iconForDir(String dir) {
         if ("U".equals(dir)) return R.drawable.ic_swipe_u;
         if ("D".equals(dir)) return R.drawable.ic_swipe_d;
+        if ("VU".equals(dir)) return R.drawable.ic_swipe_u;
+        if ("VD".equals(dir)) return R.drawable.ic_swipe_d;
         return R.drawable.ic_swipe_h;
     }
 }

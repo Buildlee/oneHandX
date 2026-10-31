@@ -740,6 +740,9 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
         private boolean instantFired;
         private long lastMoveTime;
         private long crossTime;
+        private long downAt;
+        private long lastTapAt;
+        private Runnable pendingTap;
 
         HandleTouch(String handleId, boolean left, boolean priorityHandle) {
             this.handleId = handleId;
@@ -751,6 +754,29 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
             down = false;
             main.removeCallbacks(pressHoldTask);
             main.removeCallbacks(holdCheckTask);
+        }
+
+        /** 原地轻触：350ms 内第二次判定为双击，否则单击（参考 gulugulu 的 click / doubleClick）。 */
+        private void tapOrDouble() {
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (pendingTap != null && now - lastTapAt <= 350) {
+                main.removeCallbacks(pendingTap);
+                pendingTap = null;
+                lastTapAt = 0;
+                fireSlot(Prefs.doubleSlot(handleId), "double");
+                return;
+            }
+            lastTapAt = now;
+            pendingTap = () -> { pendingTap = null; fireSlot(Prefs.clickSlot(handleId), "click"); };
+            main.postDelayed(pendingTap, 350);
+        }
+
+        private void fireSlot(String slot, String tag) {
+            GestureAction a = GestureAction.fromId(prefs.actionId(slot));
+            if (a == GestureAction.NONE) return;
+            boolean ok = execute(a, prefs.actionPkg(slot), left);
+            Log.i(TAG, tag + " slot=" + slot + " action=" + a.id + " ok=" + ok);
+            if (ok && prefs.vibrate() && immediateFeedback(a)) hapticOnce();
         }
 
         /** 长按手柄（原地按住不动）→ -P 槽位动作 */
@@ -813,6 +839,7 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
                     instantFired = false;
                     crossTime = 0;
                     quickVibed = false;
+                    downAt = System.currentTimeMillis();
                     downX = lastX = e.getRawX();
                     downY = lastY = e.getRawY();
                     maxInward = 0;
@@ -878,6 +905,9 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
                     main.removeCallbacks(holdCheckTask);
                     if (v instanceof EdgeHandleView) ((EdgeHandleView) v).setActive(false);
                     if (pressFired || holdFired || instantFired) return true;
+                    long dur = System.currentTimeMillis() - downAt;
+                    float moved = (float) Math.hypot(lastX - downX, lastY - downY);
+                    if (moved < slop * 1.5f && dur < 320) { tapOrDouble(); return true; }
                     long held = crossTime > 0 ? System.currentTimeMillis() - crossTime : 0;
                     commit(handleId, left, lastX - downX, lastY - downY, maxInward, held);
                     return true;
@@ -903,12 +933,14 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
 
     private void commit(String handleId, boolean leftSide, float dxRaw, float dy, float maxInward, long longHeldMs) {
         float dx = leftSide ? dxRaw : -dxRaw;
-        if (dx <= 0 || maxInward < shortPx() * 0.6f || ((takeoverWindows || handlePriorityActive()) && dx < shortPx() * 0.6f)) {
-            Log.i(TAG, "gesture ignored id=" + handleId + " dx=" + dx + " inward=" + maxInward);
+        // 五方向模型：垂直上/下（VU/VD）几乎没有水平位移，用总位移作为距离阈值
+        float travel = Math.max(maxInward, Math.abs(dy));
+        if (dx < 0 || travel < shortPx() * 0.6f) {
+            Log.i(TAG, "gesture ignored id=" + handleId + " dx=" + dx + " inward=" + maxInward + " travel=" + travel);
             return;
         }
         String dir = dirFor(dx, dy);
-        boolean isLong = prefs.longEnabled() && maxInward >= longPx()
+        boolean isLong = prefs.longEnabled() && travel >= longPx()
                 && (prefs.longHoldMs() <= 0 || longHeldMs >= prefs.longHoldMs());
         String len = isLong ? "L" : "S";
         Log.i(TAG, "gesture id=" + handleId + " len=" + len + " dir=" + dir
