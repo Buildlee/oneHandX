@@ -874,10 +874,7 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
 
     private String dirFor(float dx, float dy) {
         int lim = prefs != null ? prefs.angleDeg() : 28;
-        double angle = Math.toDegrees(Math.atan2(dy, Math.max(dx, 1f)));
-        if (angle <= -lim) return "U";
-        if (angle >= lim) return "D";
-        return "H";
+        return GestureRules.direction(dx, dy, lim);
     }
 
     private void commit(String handleId, boolean leftSide, float dxRaw, float dy, float maxInward, long longHeldMs) {

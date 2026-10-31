@@ -19,6 +19,8 @@ public class HandleEditActivity extends AppCompatActivity {
     private String handleId;
     private boolean advanced;
     private String selectedLength = "S";
+    private boolean placement;
+    private GesturePracticeView practice;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,12 +28,15 @@ public class HandleEditActivity extends AppCompatActivity {
         setContentView(R.layout.activity_handle_edit);
         UiKit.applyInsets(findViewById(android.R.id.content));
         handleId = getIntent().getStringExtra(EXTRA_HANDLE_ID);
-        if (handleId == null || handleId.length() < 2) {
+        if (handleId == null || !handleId.matches("[LR][1-3]")) {
             finish();
             return;
         }
         prefs = new Prefs(this);
-        if (savedInstanceState != null) { advanced = savedInstanceState.getBoolean("advanced"); selectedLength = savedInstanceState.getString("length", "S"); }
+        if (savedInstanceState != null) {
+            advanced = savedInstanceState.getBoolean("advanced"); selectedLength = savedInstanceState.getString("length", "S");
+            placement = savedInstanceState.getBoolean("placement");
+        }
         findViewById(R.id.btnBack).setOnClickListener(v -> finish());
         TextView title = findViewById(R.id.handleTitle);
         title.setText(displayName());
@@ -47,7 +52,8 @@ public class HandleEditActivity extends AppCompatActivity {
 
     @Override public void finish() { super.finish(); Motion.closeActivity(this); }
     @Override protected void onSaveInstanceState(Bundle out) {
-        out.putBoolean("advanced", advanced); out.putString("length", selectedLength); super.onSaveInstanceState(out);
+        out.putBoolean("advanced", advanced); out.putString("length", selectedLength);
+        out.putBoolean("placement", placement); super.onSaveInstanceState(out);
     }
 
     private String displayName() {
@@ -58,20 +64,21 @@ public class HandleEditActivity extends AppCompatActivity {
         LinearLayout c1 = UiKit.card(this);
         c1.addView(UiKit.switchRow(this, "启用此手柄", null, prefs.handleEnabled(handleId),
                 v -> prefs.setHandleEnabled(handleId, v)));
+        c1.addView(UiKit.subLabel(this, "短滑练习 · 不执行动作"));
+        practice = new GesturePracticeView(this, handleId);
+        c1.addView(practice, new LinearLayout.LayoutParams(-1, UiKit.dp(this, 156)));
         root.addView(c1);
+        root.addView(UiKit.segmentedTabs(this, new String[]{"动作配置", "位置与外观"}, placement ? 1 : 0, selected -> {
+            placement = selected == 1; rebuild();
+        }));
 
         LinearLayout c2 = UiKit.card(this);
         c2.addView(UiKit.subLabel(this, "从" + (handleId.startsWith("L") ? "左" : "右") + "手柄向内滑动 · 点按动作修改"));
-        LinearLayout lengths = new LinearLayout(this);
-        for (String length : new String[]{"S", "L"}) {
-            TextView tab = new TextView(this); tab.setText(length.equals("S") ? "短滑" : "长滑");
-            tab.setTextSize(15); tab.setGravity(android.view.Gravity.CENTER); tab.setMinHeight(UiKit.dp(this, 48));
-            tab.setTextColor(UiKit.col(this, length.equals(selectedLength) ? R.color.accent : R.color.text_secondary));
-            tab.setSelected(length.equals(selectedLength));
-            tab.setOnClickListener(v -> { if (!length.equals(selectedLength)) { selectedLength = length; rebuild(); } });
-            lengths.addView(tab, new LinearLayout.LayoutParams(0, -2, 1));
-        }
-        c2.addView(lengths);
+        c2.addView(UiKit.segmentedTabs(this, new String[]{"短滑", "长滑"}, selectedLength.equals("L") ? 1 : 0, selected -> {
+            selectedLength = selected == 1 ? "L" : "S"; rebuild();
+        }));
+        if (selectedLength.equals("L")) c2.addView(UiKit.switchRow(this, "启用长滑", "同时对所有手柄生效", prefs.longEnabled(),
+                enabled -> prefs.setBool(Prefs.LONG_ENABLED, enabled)));
         for (String dir : new String[]{"U", "H", "D"}) c2.addView(gestureRow(selectedLength, dir));
         if (selectedLength.equals("L")) c2.addView(UiKit.subLabel(this, "未配置长滑时使用对应短滑动作；长滑总开关在设置 → 手势识别。"));
         LinearLayout advancedRows = new LinearLayout(this); advancedRows.setOrientation(LinearLayout.VERTICAL);
@@ -110,8 +117,13 @@ public class HandleEditActivity extends AppCompatActivity {
                 this::setPos));
         c3.addView(UiKit.sliderRow(this, "不透明度", 0, 100, prefs.handleAlpha(handleId), "%",
                 v -> prefs.setHandleAlpha(handleId, v)));
-        root.addView(c2);
-        root.addView(c3);
+        root.addView(placement ? c3 : c2);
+        LinearLayout footer = UiKit.card(this);
+        footer.addView(UiKit.clickRow(this, "外观与反馈", "曲面样式、颜色与透明度", v -> {
+            startActivity(new Intent(this, AppearanceActivity.class)); Motion.openActivity(this);
+        }));
+        footer.addView(UiKit.subLabel(this, "修改自动保存。上方仅练习短滑；实际边缘手势需开启服务，并按设备调整系统返回边距。"));
+        root.addView(footer);
 
         int index = Integer.parseInt(handleId.substring(1));
         String side = handleId.substring(0, 1);
@@ -142,7 +154,6 @@ public class HandleEditActivity extends AppCompatActivity {
                 v -> ActionDialog.show(this, displayName() + " · " + title,
                         prefs.actionId(slot),
                         action -> {
-                            prefs.setActionId(slot, action.id);
                             if (action.needsApp) {
                                 Intent i = new Intent(this, AppPickerActivity.class);
                                 i.putExtra(AppPickerActivity.EXTRA_SLOT, slot);
@@ -150,10 +161,12 @@ public class HandleEditActivity extends AppCompatActivity {
                                 startActivity(i);
                                 Motion.openActivity(this);
                             } else {
+                                prefs.setActionId(slot, action.id);
                                 boolean none = GestureAction.NONE.id.equals(prefs.actionId(slot));
                                 holder[0].value.setText(prefs.displayFor(slot));
                                 holder[0].value.setTextColor(UiKit.col(this,
                                         none ? R.color.text_secondary : R.color.text_primary));
+                                practice.refreshMapping();
                             }
                         }));
         holder[0] = r;

@@ -39,6 +39,10 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout root;
     private TextView statusLine;
     private TextView statusAction;
+    private final android.os.Handler statusHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable statusRefresh = new Runnable() {
+        @Override public void run() { refreshStatus(); statusHandler.postDelayed(this, 1000); }
+    };
     private String page = "手势";
     private TextView excludeCountTv;
     private TextView navbarSummaryTv;
@@ -122,6 +126,13 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         buildContent();
         refreshAll();
+        statusHandler.removeCallbacks(statusRefresh);
+        statusHandler.postDelayed(statusRefresh, 1000);
+    }
+
+    @Override protected void onPause() {
+        statusHandler.removeCallbacks(statusRefresh);
+        super.onPause();
     }
 
     @Override
@@ -175,9 +186,12 @@ public class MainActivity extends AppCompatActivity {
         if (prefs.handlesSafetyPaused()) {
             statusLine.setText("已安全暂停 · 在系统手势共存中选择继续方式");
             if (statusAction != null) statusAction.setText("检查");
-        } else if (a11yOn() && prefs.masterEnabled()) {
-            statusLine.setText("运行中 · 从已启用的手柄向内滑动");
+        } else if (a11yOn() && prefs.masterEnabled() && EdgeService.connectedService() != null) {
+            statusLine.setText("服务已连接 · 从已启用的手柄向内滑动");
             if (statusAction != null) statusAction.setText("已开启");
+        } else if (a11yOn() && prefs.masterEnabled()) {
+            statusLine.setText("已授权，服务尚未连接 · 可先编辑配置");
+            if (statusAction != null) statusAction.setText("检查服务");
         } else if (a11yOn()) {
             statusLine.setText("已暂停 · 开启下方总开关即可恢复");
             if (statusAction != null) statusAction.setText("已授权");
@@ -212,9 +226,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String summaryOf(String id) {
-        String s = "直滑 " + prefs.displayFor(Prefs.slot(id, "S", "H"))
-                + " · 斜上 " + prefs.displayFor(Prefs.slot(id, "S", "U"))
-                + " · 斜下 " + prefs.displayFor(Prefs.slot(id, "S", "D"));
+        boolean left = id.startsWith("L");
+        String s = (left ? "↗  " : "↖  ") + prefs.displayFor(Prefs.slot(id, "S", "U"))
+                + "\n" + (left ? "→  " : "←  ") + prefs.displayFor(Prefs.slot(id, "S", "H"))
+                + "\n" + (left ? "↘  " : "↙  ") + prefs.displayFor(Prefs.slot(id, "S", "D"));
         if (!prefs.handleEnabled(id)) s += " · 已停用";
         return s;
     }
@@ -292,7 +307,11 @@ public class MainActivity extends AppCompatActivity {
                 root.addView(UiKit.sectionHeader(this, "我的手势"));
                 root.addView(handlesCard());
                 LinearLayout tryCard = UiKit.card(this);
-                tryCard.addView(UiKit.clickRow(this, "试用手势", "只预览反馈，不执行系统动作", v -> openAppearance()));
+                tryCard.addView(UiKit.clickRow(this, "试用手势", "练习当前手柄动作，不执行系统操作", v -> {
+                    Intent intent = new Intent(this, HandleEditActivity.class);
+                    intent.putExtra(HandleEditActivity.EXTRA_HANDLE_ID, prefs.sideEnabled("L") ? "L1" : "R1");
+                    startActivity(intent); Motion.openActivity(this);
+                }));
                 tryCard.addView(UiKit.clickRow(this, "避免与系统返回冲突", "默认内移 26dp，可按手机调整", v -> navigate("系统手势共存")));
                 root.addView(tryCard);
                 break;
@@ -380,6 +399,7 @@ public class MainActivity extends AppCompatActivity {
         texts.addView(t1);
         statusLine = new TextView(this);
         statusLine.setTextSize(13);
+        statusLine.setTextColor(UiKit.col(this, R.color.text_secondary));
         statusLine.setPadding(0, UiKit.dp(this, 3), UiKit.dp(this, 12), 0);
         texts.addView(statusLine);
         statusRow.addView(texts);
@@ -402,11 +422,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private View handlesCard() {
-        LinearLayout c = UiKit.card(this);
+        LinearLayout group = new LinearLayout(this);
+        group.setOrientation(LinearLayout.VERTICAL);
         for (String side : Prefs.SIDES) {
             final String fs = side;
-            c.addView(UiKit.subLabel(this, side.equals("L") ? "左手柄" : "右手柄"));
-            c.addView(UiKit.switchRow(this, "启用" + (side.equals("L") ? "左手柄" : "右手柄"), null,
+            LinearLayout c = UiKit.card(this);
+            c.addView(UiKit.switchRow(this, "启用" + (side.equals("L") ? "左手柄" : "右手柄"), "点按手柄配置动作与位置",
                     prefs.sideEnabled(side), v -> prefs.setSideEnabled(fs, v)));
             int count = prefs.handleCount(side);
             for (int i = 1; i <= count; i++) {
@@ -420,8 +441,9 @@ public class MainActivity extends AppCompatActivity {
                             refreshAll();
                         }));
             }
+            group.addView(c);
         }
-        return c;
+        return group;
     }
 
     private View handleRow(String side, int index) {
@@ -444,6 +466,7 @@ public class MainActivity extends AppCompatActivity {
         texts.addView(t1);
         TextView t2 = new TextView(this);
         t2.setTextSize(13);
+        t2.setLineSpacing(UiKit.dp(this, 3), 1f);
         t2.setTextColor(UiKit.col(this, R.color.text_secondary));
         t2.setPadding(0, UiKit.dp(this, 3), 0, 0);
         t2.setText(summaryOf(id));
@@ -452,9 +475,11 @@ public class MainActivity extends AppCompatActivity {
         row.addView(texts);
 
         SoftSwitch sw = new SoftSwitch(this);
+        sw.setContentDescription((side.equals("L") ? "左" : "右") + "手柄 " + index + " 启用开关");
         sw.setChecked(prefs.handleEnabled(id));
         sw.setOnCheckedChangeListener((s, v) -> prefs.setHandleEnabled(id, v));
         row.addView(sw);
+        row.addView(UiKit.chevron(this));
 
         row.setOnClickListener(v -> {
             Intent i = new Intent(this, HandleEditActivity.class);
@@ -477,7 +502,6 @@ public class MainActivity extends AppCompatActivity {
                             GestureAction.pickerWithoutPanels(),
                             action -> {
                                 String s = prefs.quickToolSlot(idx);
-                                prefs.setActionId(s, action.id);
                                 if (action.needsApp) {
                                     Intent it = new Intent(this, AppPickerActivity.class);
                                     it.putExtra(AppPickerActivity.EXTRA_SLOT, s);
@@ -485,6 +509,7 @@ public class MainActivity extends AppCompatActivity {
                                     startActivity(it);
                                     Motion.openActivity(this);
                                 } else {
+                                    prefs.setActionId(s, action.id);
                                     refreshSummaries();
                                 }
                             }));

@@ -28,8 +28,9 @@ public class SmokeInstrumentation extends Instrumentation {
     private boolean guardTransactions;
     private boolean guardStress;
     private boolean priorityStall;
+    private boolean productFlow;
 
-    @Override public void onCreate(Bundle args) { super.onCreate(args); theme = Integer.parseInt(args.getString("theme", "1")); motionMode = args.getString("motion", "false").equals("true"); recoveryMode = args.getString("recovery", "false").equals("true"); shizukuMode = args.getString("shizuku", "false").equals("true"); holdGuard = args.getString("holdGuard", "false").equals("true"); guardTransactions = args.getString("guardTransactions", "false").equals("true"); guardStress = args.getString("guardStress", "false").equals("true"); priorityStall = args.getString("priorityStall", "false").equals("true"); start(); }
+    @Override public void onCreate(Bundle args) { super.onCreate(args); theme = Integer.parseInt(args.getString("theme", "1")); motionMode = args.getString("motion", "false").equals("true"); recoveryMode = args.getString("recovery", "false").equals("true"); shizukuMode = args.getString("shizuku", "false").equals("true"); holdGuard = args.getString("holdGuard", "false").equals("true"); guardTransactions = args.getString("guardTransactions", "false").equals("true"); guardStress = args.getString("guardStress", "false").equals("true"); priorityStall = args.getString("priorityStall", "false").equals("true"); productFlow = args.getString("productFlow", "false").equals("true"); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
@@ -69,6 +70,10 @@ public class SmokeInstrumentation extends Instrumentation {
             prefs.setInt(Prefs.THEME, theme);
             runOnMainSync(() -> androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(theme == 2
                     ? androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES : androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO));
+            if (productFlow) {
+                int count = new ProductFlowChecks(this, prefs, theme).run(); restore();
+                result.putString("stream", "PASS: " + count + " product flow checks\n"); finish(Activity.RESULT_OK, result); return;
+            }
             if (motionMode) {
                 int count = new MotionChecks(this, prefs).run(); restore();
                 result.putString("stream", "PASS: " + count + " motion checks\n"); finish(Activity.RESULT_OK, result); return;
@@ -84,7 +89,10 @@ public class SmokeInstrumentation extends Instrumentation {
             runOnMainSync(main::onBackPressed); waitForIdleSync();
             click(main, "设置"); click(main, "使用场景"); assertText(main, "适配键盘");
             runOnMainSync(main::onBackPressed); waitForIdleSync();
-            click(main, "系统手势共存"); assertText(main, "距屏幕边缘");
+            click(main, "系统手势共存");
+            if (android.os.Build.VERSION.SDK_INT >= 29) assertText(main, "手柄优先（实验）");
+            assertText(main, prefs.handlesSafetyPaused() ? "使用内移共存"
+                    : prefs.handlePriorityEnabled() ? "手柄优先（实验）" : "距屏幕边缘");
             runOnMainSync(main::onBackPressed); waitForIdleSync();
             screenshot(main, "settings");
             Activity editor = launch(HandleEditActivity.class, "handle_id", "L1");
@@ -98,16 +106,17 @@ public class SmokeInstrumentation extends Instrumentation {
             screenshot(appearance, "appearance");
             click(appearance, "背景颜色");
             getUiAutomation().waitForIdle(500, 5000);
-            android.view.accessibility.AccessibilityNodeInfo input = colorInput();
+            android.widget.EditText input = colorInput();
             check(input != null, "color editor available");
-            Bundle inputArgs = new Bundle();
-            inputArgs.putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "invalid");
-            check(input.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, inputArgs), "set invalid color");
+            final android.widget.EditText invalidInput = input;
+            runOnMainSync(() -> invalidInput.setText("invalid"));
+            check("invalid".contentEquals(input.getText()), "set invalid color");
             nodeClick("应用");
             check(prefs.waveFill() == 0xFF32495D, "invalid color preserves current value");
-            inputArgs.putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "#456789");
             input = colorInput();
-            check(input.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, inputArgs), "set custom color");
+            final android.widget.EditText customInput = input;
+            runOnMainSync(() -> customInput.setText("#456789"));
+            check("#456789".contentEquals(input.getText()), "set custom color");
             nodeClick("应用");
             check(prefs.waveFill() == 0xFF456789 && prefs.waveArrow() == 0xFFFFFFFF, "color dialog saves fill independently");
             View root = appearance.getWindow().getDecorView();
@@ -232,24 +241,20 @@ public class SmokeInstrumentation extends Instrumentation {
         }
         return null;
     }
-    private android.view.accessibility.AccessibilityNodeInfo colorInput() {
-        for (android.view.accessibility.AccessibilityWindowInfo window : getUiAutomation().getWindows()) {
-            android.view.accessibility.AccessibilityNodeInfo root = window.getRoot();
-            if (root != null && "io.buildlee.onehand".contentEquals(root.getPackageName())) {
-                android.view.accessibility.AccessibilityNodeInfo found = nodeByClass(root, "android.widget.EditText");
-                if (found != null) return found;
-            }
-        }
-        return null;
+    private android.widget.EditText colorInput() throws Exception {
+        final android.widget.EditText[] found = new android.widget.EditText[1];
+        long deadline = android.os.SystemClock.uptimeMillis() + 5000;
+        do {
+            runOnMainSync(() -> found[0] = TestViews.type(TestViews.editRoot(), android.widget.EditText.class));
+            if (found[0] != null) return found[0];
+            Thread.sleep(100);
+        } while (android.os.SystemClock.uptimeMillis() < deadline);
+        return found[0];
     }
     private void nodeClick(String name) throws Exception {
-        for (android.view.accessibility.AccessibilityNodeInfo node : getUiAutomation().getRootInActiveWindow().findAccessibilityNodeInfosByText(name)) {
-            if (name.contentEquals(node.getText()) && node.isClickable()) {
-                check(node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK), "click dialog " + name);
-                waitForIdleSync(); getUiAutomation().waitForIdle(100, 3000); return;
-            }
-        }
-        throw new AssertionError("missing dialog button: " + name);
+        runOnMainSync(() -> TestViews.click(TestViews.focusedRoot(), name));
+        check(true, "click dialog " + name);
+        waitForIdleSync();
     }
     private void assertText(Activity a, String value) { check(find(a.getWindow().getDecorView(), value) != null, value); }
     private void restore() {

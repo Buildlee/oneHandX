@@ -113,6 +113,27 @@ public class UiKit {
         return t;
     }
 
+    /** Familiar tab affordance shared by handle configuration and gesture length selection. */
+    public static LinearLayout segmentedTabs(Context c, String[] labels, int selected, IntConsumer onSelect) {
+        LinearLayout tabs = new LinearLayout(c);
+        tabs.setPadding(0, dp(c, 8), 0, dp(c, 4));
+        for (int i = 0; i < labels.length; i++) {
+            final int index = i;
+            TextView tab = new TextView(c);
+            tab.setText(labels[i]); tab.setTextSize(15); tab.setGravity(Gravity.CENTER);
+            tab.setMinHeight(dp(c, 48)); tab.setSelected(i == selected);
+            tab.setTypeface(Typeface.DEFAULT, i == selected ? Typeface.BOLD : Typeface.NORMAL);
+            tab.setTextColor(col(c, i == selected ? R.color.accent : R.color.text_secondary));
+            if (i == selected) {
+                android.graphics.drawable.GradientDrawable fill = new android.graphics.drawable.GradientDrawable();
+                fill.setColor(col(c, R.color.accent_soft)); fill.setCornerRadius(dp(c, 12)); tab.setBackground(fill);
+            } else tab.setBackgroundResource(R.drawable.bg_row);
+            tab.setOnClickListener(v -> { if (index != selected) onSelect.accept(index); });
+            tabs.addView(tab, new LinearLayout.LayoutParams(0, -2, 1));
+        }
+        return tabs;
+    }
+
     public static TextView subLabel(Context c, String text) {
         TextView t = new TextView(c);
         t.setText(text);
