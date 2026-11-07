@@ -184,11 +184,14 @@ public class Prefs {
     public void setHandleAlpha(String id, int v) { setInt("h_" + id + "_alpha", v); }
 
     /** Keep the primary handle usable by default; secondary handles can opt into sharing. */
+    public int priorityBudgetDp() { return Math.max(200,ExclusionSession.budget()); }
     public int priorityRequestedDp(String id) {
-        return Math.max(0, Math.min(200, getInt("h_" + id + "_priority_dp", id.endsWith("1") ? 200 : 0)));
+        int budget=priorityBudgetDp();
+        String suffix=ExclusionSession.active()?"_replacement_dp":"_priority_dp";
+        return Math.max(0, Math.min(budget, getInt("h_" + id + suffix, id.endsWith("1") ? budget : 0)));
     }
     public void setPriorityRequestedDp(String id, int value) {
-        setInt("h_" + id + "_priority_dp", Math.max(0, Math.min(200, value)));
+        setInt("h_" + id + (ExclusionSession.active()?"_replacement_dp":"_priority_dp"), Math.max(0, Math.min(priorityBudgetDp(), value)));
     }
     public float priorityHeightDp(String id) {
         if (!sideEnabled(id.substring(0, 1)) || !handleEnabled(id)) return 0;
@@ -198,7 +201,7 @@ public class Prefs {
             String other = handleId(side, i);
             if (handleEnabled(other)) total += priorityRequestedDp(other);
         }
-        return requested * Math.min(1f, 200f / Math.max(1, total));
+        return requested * Math.min(1f, (float)priorityBudgetDp() / Math.max(1, total));
     }
 
     /** 删除手柄（仅允许删最后一个）：清掉它的属性与全部手势映射 */
@@ -209,6 +212,7 @@ public class Prefs {
         e.remove("h_" + id + "_pos");
         e.remove("h_" + id + "_alpha");
         e.remove("h_" + id + "_priority_dp");
+        e.remove("h_" + id + "_replacement_dp");
         for (String len : SLOT_LENS) {
             for (String dir : DIRS) {
                 String slot = slot(id, len, dir);
@@ -236,6 +240,7 @@ public class Prefs {
         return android.os.Build.VERSION.SDK_INT >= 29 && getBool(HANDLE_PRIORITY, false) && !HandlePrioritySafety.isPaused(ctx);
     }
     public boolean setHandlePriorityEnabled(boolean enabled) {
+        if (ExclusionSession.pending(ctx) && !ExclusionSession.active()) return false;
         if (!HandlePrioritySafety.clearPause(ctx)) return false;
         setBool(HANDLE_PRIORITY, enabled);
         EdgeService service = EdgeService.connectedService();

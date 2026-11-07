@@ -36,7 +36,7 @@ final class HandlePrioritySafety {
         return !isPaused(context);
     }
 
-    private static IOException persistPause(Context context) {
+    static IOException persistPause(Context context) {
         try {
             AtomicFile file = new AtomicFile(marker(context));
             FileOutputStream output = file.startWrite();

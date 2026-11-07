@@ -29,11 +29,22 @@ public class SmokeInstrumentation extends Instrumentation {
     private boolean guardStress;
     private boolean priorityStall;
     private boolean productFlow;
+    private boolean expandedProbe;
+    private boolean replacementFlow;
 
-    @Override public void onCreate(Bundle args) { super.onCreate(args); theme = Integer.parseInt(args.getString("theme", "1")); motionMode = args.getString("motion", "false").equals("true"); recoveryMode = args.getString("recovery", "false").equals("true"); shizukuMode = args.getString("shizuku", "false").equals("true"); holdGuard = args.getString("holdGuard", "false").equals("true"); guardTransactions = args.getString("guardTransactions", "false").equals("true"); guardStress = args.getString("guardStress", "false").equals("true"); priorityStall = args.getString("priorityStall", "false").equals("true"); productFlow = args.getString("productFlow", "false").equals("true"); start(); }
+    @Override public void onCreate(Bundle args) { super.onCreate(args); replacementFlow = args.getString("replacementFlow", "false").equals("true"); expandedProbe = args.getString("expandedProbe", "false").equals("true"); theme = Integer.parseInt(args.getString("theme", "1")); motionMode = args.getString("motion", "false").equals("true"); recoveryMode = args.getString("recovery", "false").equals("true"); shizukuMode = args.getString("shizuku", "false").equals("true"); holdGuard = args.getString("holdGuard", "false").equals("true"); guardTransactions = args.getString("guardTransactions", "false").equals("true"); guardStress = args.getString("guardStress", "false").equals("true"); priorityStall = args.getString("priorityStall", "false").equals("true"); productFlow = args.getString("productFlow", "false").equals("true"); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            if (replacementFlow) {
+                ReplacementFlowProbe.run(this);
+                result.putString("stream", "PASS: replacement probe closed\n"); finish(Activity.RESULT_OK,result); return;
+            }
+            // Kept separate from production routing until real input and recovery are proven.
+            if (expandedProbe) {
+                ExpandedEdgeProbe.run(this);
+                result.putString("stream", "PASS: expanded probe closed\n"); finish(Activity.RESULT_OK, result); return;
+            }
             if (priorityStall) {
                 if (!(android.os.Build.HARDWARE.contains("ranchu") || android.os.Build.HARDWARE.contains("goldfish"))) {
                     throw new IllegalStateException("Main-thread stall injection is restricted to an emulator");

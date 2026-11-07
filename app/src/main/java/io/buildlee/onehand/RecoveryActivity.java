@@ -23,11 +23,17 @@ public final class RecoveryActivity extends Activity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private TextView status;
     private Button restore;
+    private final android.os.Handler budgetMain=new android.os.Handler(android.os.Looper.getMainLooper());
+    private static boolean binderRequested;
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        if (!binderRequested) {
+            rikka.shizuku.ShizukuProvider.requestBinderForNonProviderProcess(getApplicationContext());
+            binderRequested=true;
+        }
         int savedTheme = 0;
         try { savedTheme = getSharedPreferences(Prefs.NAME, MODE_PRIVATE).getInt(Prefs.THEME, 0); }
         catch (RuntimeException ignored) { }
@@ -117,7 +123,7 @@ public final class RecoveryActivity extends Activity {
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
                 switch (current) {
-                    case NO_RECORD: status.setText("没有待恢复的接管记录；系统设置未修改。"); break;
+                    case NO_RECORD: status.setText(ExclusionSession.pending(this)?"发现临时额度恢复记录。点击下方按钮停止手柄并还原额度。":"没有待恢复的接管记录；系统设置未修改。"); break;
                     case PENDING: status.setText("发现未完成的接管记录。点击下方按钮恢复原始设置。"); break;
                     default: status.setText("暂时无法读取恢复记录，请解锁设备并检查存储后重试。");
                 }
@@ -126,11 +132,32 @@ public final class RecoveryActivity extends Activity {
         });
     }
 
+    private void recoverBudget(String expectedId) {
+                if (ExclusionSession.pending(RecoveryActivity.this)) {
+                    ExclusionSession session=ExclusionSession.get(RecoveryActivity.this);
+                    session.recover(expectedId);
+                    final long until=android.os.SystemClock.elapsedRealtime()+12000;
+                    budgetMain.post(new Runnable() { public void run() {
+                        if (isFinishing() || isDestroyed()) return;
+                        if (!ExclusionSession.pending(RecoveryActivity.this)) {
+                            status.setText("手柄已暂停，临时额度已还原。请从左右边缘确认系统返回可用。");
+                        } else {
+                            status.setText("手柄已暂停；临时额度恢复状态：\n"+session.status());
+                            if (android.os.SystemClock.elapsedRealtime()<until) budgetMain.postDelayed(this,400);
+                        }
+                    }});
+                }
+    }
+
     private void doRestore() {
         restore.setEnabled(false);
         status.setText("正在检查并恢复原始设置…");
         io.execute(() -> {
             // Cross-process SharedPreferences can be stale; recovery must never depend on that cache.
+            String budgetId=null;
+            try { org.json.JSONObject record=new BudgetStore(getApplicationContext()).read(); if(record!=null) budgetId=record.getString("id"); }
+            catch(Exception ignored) { }
+            final String expectedBudgetId=budgetId;
             boolean priorityStopped = false;
             try { HandlePrioritySafety.pauseForRecovery(getApplicationContext()); priorityStopped = true; }
             catch (Exception ignored) { }
@@ -158,11 +185,13 @@ public final class RecoveryActivity extends Activity {
                         status.setText((stopped ? "实验手柄已停用。" : "") + "恢复未完成，原始记录已保留。请检查权限和恢复资料后重试。");
                 }
                 restore.setEnabled(true);
+                if (stopped && expectedBudgetId!=null) recoverBudget(expectedBudgetId);
             });
         });
     }
 
     @Override protected void onDestroy() {
+        budgetMain.removeCallbacksAndMessages(null);
         io.shutdown();
         super.onDestroy();
     }

@@ -95,6 +95,7 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
     private final BroadcastReceiver pauseReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (!HandlePrioritySafety.isPaused(EdgeService.this)) return;
+            if (ExclusionSession.active() || ExclusionSession.pending(EdgeService.this)) ExclusionSession.get(EdgeService.this).stopRuntime();
             android.os.ResultReceiver reply = Build.VERSION.SDK_INT >= 33
                     ? intent.getParcelableExtra(HandlePrioritySafety.EXTRA_ACK, android.os.ResultReceiver.class)
                     : intent.getParcelableExtra(HandlePrioritySafety.EXTRA_ACK);
@@ -198,6 +199,7 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
         wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         takeover = TakeoverManager.get(this);
         connectedService = this;
+        if (ExclusionSession.pending(this) && !ExclusionSession.active()) HandlePrioritySafety.persistPause(this);
         priorityGuard = new HandlePriorityController(this, this::priorityWindowsHealthy,
                 () -> handlesMayBeVisible() && hasPriorityHandles(), this::refreshHandles);
         IntentFilter screenFilter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
@@ -224,6 +226,7 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
 
     @Override
     public void onDestroy() {
+        if (ExclusionSession.active()) ExclusionSession.get(this).inputStopped();
         main.removeCallbacks(resumePriority);
         if (priorityGuard != null) priorityGuard.stop();
         Log.i(TAG, "service destroy");
@@ -250,6 +253,7 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
 
     @Override
     public boolean onUnbind(Intent intent) {
+        if (ExclusionSession.active()) ExclusionSession.get(this).inputStopped();
         main.removeCallbacks(resumePriority);
         if (priorityGuard != null) priorityGuard.stop();
         Log.i(TAG, "service unbind");
@@ -339,7 +343,7 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
             if (!takeover.isPausingScene()) takeover.stop();
             return;
         }
-        priorityMode = prefs.handlePriorityEnabled();
+        priorityMode = ExclusionSession.active() || prefs.handlePriorityEnabled();
         detachAll();
         if (prefs.handlesSafetyPaused()) {
             if (priorityGuard != null) priorityGuard.stop();
@@ -410,6 +414,8 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
     }
 
     private void attachHandle(String id) {
+        // Replacement never turns a zero-allocation handle into an inset overlay.
+        if (ExclusionSession.active() && prefs.priorityHeightDp(id)<=0) return;
         boolean left = id.startsWith("L");
         Point size = Du.screenSize(this);
         int widthPx = Du.dp(this, prefs.handleWidthDp());
@@ -923,6 +929,7 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
         }
         String slot = Prefs.slot(handleId, len, dir);
         GestureAction action = GestureAction.fromId(prefs.actionId(slot));
+        if (ExclusionSession.active() && ExclusionSession.get(this).trial()) action=GestureAction.BACK;
         if (action == GestureAction.NONE && "L".equals(len)) {
             slot = Prefs.slot(handleId, "S", dir);
             action = GestureAction.fromId(prefs.actionId(slot));
@@ -932,6 +939,7 @@ public class EdgeService extends AccessibilityService implements TakeoverManager
             return;
         }
         boolean ok = execute(action, prefs.actionPkg(slot), leftSide);
+        if (ok && ExclusionSession.active()) ExclusionSession.get(this).record(leftSide);
         if (!ok && action == GestureAction.BACK && takeoverWindows && takeover != null) takeover.stop();
         boolean pendingShot = action == GestureAction.SCREENSHOT && ok;
         Log.i(TAG, "gesture slot=" + slot + " action=" + action.id + (pendingShot ? " submitted=true" : " ok=" + ok));

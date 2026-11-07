@@ -48,6 +48,15 @@ final class ProductFlowChecks {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         test.waitForIdleSync(); waitForFocus(home);
         screenshot("product-home");
+        click(home,"设置");
+        ReplacementActivity replacement=(ReplacementActivity)next(home,"替换系统侧边手势",ReplacementActivity.class);
+        assertText(replacement,"替换侧边手势");
+        String beforeReplacement=prefs.dumpJson();
+        click(replacement,"开始 60 秒试用");
+        check(!ExclusionSession.active() && !ExclusionSession.pending(test.getTargetContext()),"unchecked recovery acknowledgement cannot start replacement");
+        check(beforeReplacement.equals(prefs.dumpJson()),"opening replacement and declining acknowledgement preserves configuration");
+        screenshot("replacement-entry");
+        ui(replacement::finish); test.waitForIdleSync(); waitForFocus(home); click(home,"手势");
         HandleEditActivity editor = (HandleEditActivity) next(home, "左手柄 1", HandleEditActivity.class);
         assertText(editor, "短滑练习 · 不执行动作");
         assertText(editor, "短滑 · 向右上滑动");

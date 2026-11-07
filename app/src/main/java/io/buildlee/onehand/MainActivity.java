@@ -330,7 +330,8 @@ public class MainActivity extends AppCompatActivity {
                 settings.addView(UiKit.clickRow(this, "外观与反馈", Prefs.FEEDBACK_NAMES[prefs.feedbackStyle()] + " · 配色与透明度", v -> openAppearance()));
                 settings.addView(UiKit.clickRow(this, "手势识别", "距离、角度、长滑与振动", v -> navigate("手势识别")));
                 settings.addView(UiKit.clickRow(this, "使用场景", "键盘、横屏与应用例外", v -> navigate("使用场景")));
-                settings.addView(UiKit.clickRow(this, "系统手势共存", "边距调节与兼容性说明", v -> navigate("系统手势共存")));
+                settings.addView(UiKit.clickRow(this, "替换系统侧边手势", "Shizuku · 大范围贴边与故障恢复", v -> openReplacement()));
+                settings.addView(UiKit.clickRow(this, "系统手势共存", "旧版手柄优先与共存配置", v -> navigate("系统手势共存")));
                 if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
                         && (android.os.Build.HARDWARE.contains("ranchu") || android.os.Build.HARDWARE.contains("goldfish"))) {
                     settings.addView(UiKit.clickRow(this, "双侧接管（模拟器实验）", "校准、试用与恢复", v -> startActivity(new Intent(this, TakeoverActivity.class))));
@@ -347,6 +348,12 @@ public class MainActivity extends AppCompatActivity {
                 root.addView(sceneCard()); break;
             case "系统手势共存":
                 LinearLayout conflict = UiKit.card(this);
+                if (ExclusionSession.active()) {
+                    conflict.addView(UiKit.subLabel(this,"临时替换正在运行，每侧额度 "+prefs.priorityBudgetDp()+"dp；此模式保持贴边，不使用内移。"));
+                    conflict.addView(UiKit.clickRow(this,"管理临时替换","试用状态、确认与恢复",v -> openReplacement()));
+                    root.addView(conflict); break;
+                }
+                conflict.addView(UiKit.clickRow(this,"替换系统侧边手势","需要更大范围时使用 Shizuku 临时替换",v -> openReplacement()));
                 if (android.os.Build.VERSION.SDK_INT >= 29) {
                     conflict.addView(UiKit.switchRow(this, "手柄优先（实验）", "手柄贴边，范围外保留系统返回", prefs.handlePriorityEnabled(), enabled -> {
                         if (!prefs.setHandlePriorityEnabled(enabled)) Toast.makeText(this, "暂时无法解除安全暂停，请稍后重试", Toast.LENGTH_LONG).show();
@@ -374,6 +381,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void openAppearance() { startActivity(new Intent(this, AppearanceActivity.class)); Motion.openActivity(this); }
+    private void openReplacement() { startActivity(new Intent(this,ReplacementActivity.class)); Motion.openActivity(this); }
     private void panelHelp(String title, String message) {
         new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("知道了", null).show();
     }

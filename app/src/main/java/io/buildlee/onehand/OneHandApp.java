@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatDelegate;
 
 /** Apply the saved theme before any Activity creates its views. */
 public class OneHandApp extends Application {
+    static { rikka.shizuku.ShizukuProvider.enableMultiProcessSupport(false); }
     @Override public void onCreate() {
         super.onCreate();
         if (isRecoveryProcess()) return;

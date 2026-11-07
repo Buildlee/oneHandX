@@ -56,6 +56,7 @@
         <activity android:name=".TakeoverActivity"
             android:enableOnBackInvokedCallback="false"
             android:exported="false" />
+        <activity android:name=".ReplacementActivity" android:exported="false" />
 
         <service android:name=".HandlePriorityGuardService"
             android:process=":recovery" android:exported="false" />

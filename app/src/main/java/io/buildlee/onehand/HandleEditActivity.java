@@ -108,18 +108,18 @@ public class HandleEditActivity extends AppCompatActivity {
         coexist.setOrientation(LinearLayout.VERTICAL);
         if (prefs.handlePriorityEnabled()) {
             TextView allocation = UiKit.subLabel(this, prioritySummary());
-            c3.addView(UiKit.sliderRow(this, "接管高度", 0, 200, prefs.priorityRequestedDp(handleId), "dp", value -> {
+            c3.addView(UiKit.sliderRow(this, "接管高度", 0, prefs.priorityBudgetDp(), prefs.priorityRequestedDp(handleId), "dp", value -> {
                 prefs.setPriorityRequestedDp(handleId, value);
                 if (prefs.syncHandles()) prefs.setPriorityRequestedDp(mirrorId(), value);
                 allocation.setText(prioritySummary());
-                coexist.setVisibility(prefs.priorityHeightDp(handleId) > 0 ? View.GONE : View.VISIBLE);
+                coexist.setVisibility(ExclusionSession.active() || prefs.priorityHeightDp(handleId)>0 ? View.GONE : View.VISIBLE);
             }));
             c3.addView(allocation);
         }
         coexist.addView(UiKit.sliderRow(this, "距屏幕边缘", 4, 80, prefs.handleMarginDp(), "dp", prefs::setHandleMarginDp));
         coexist.addView(UiKit.subLabel(this, "最外侧留给系统返回；短指示条只标记起点，触摸范围仍由长度决定。"));
         coexist.addView(UiKit.sliderRow(this, "长度", 30, 95, prefs.handleLen(handleId), "%", this::setLen));
-        coexist.setVisibility(prefs.handlePriorityEnabled() && prefs.priorityHeightDp(handleId) > 0 ? View.GONE : View.VISIBLE);
+        coexist.setVisibility(ExclusionSession.active() || prefs.handlePriorityEnabled() && prefs.priorityHeightDp(handleId)>0 ? View.GONE : View.VISIBLE);
         c3.addView(coexist);
         c3.addView(UiKit.subLabel(this, "外观"));
         c3.addView(UiKit.sliderRow(this, "垂直位置", 0, 100, prefs.handlePos(handleId), "%",
@@ -219,7 +219,8 @@ public class HandleEditActivity extends AppCompatActivity {
 
     private String prioritySummary() {
         return "当前分配约 " + Math.round(prefs.priorityHeightDp(handleId))
-                + "dp。每侧总计最多 200dp，多手柄按设定比例共享；设为 0 时，此手柄使用内移共存。";
+                + "dp。每侧总计最多 "+prefs.priorityBudgetDp()+"dp，多手柄按设定比例共享；"
+                +(ExclusionSession.active()?"设为 0 时，此手柄在临时替换中停用，不会内移。":"设为 0 时，此手柄使用内移共存。");
     }
 
     private String lenName(String len) {
